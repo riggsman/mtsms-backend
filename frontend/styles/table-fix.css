@@ -1,0 +1,226 @@
+/* 
+ * Table Display Fix - Ensures tables display properly
+ * This fixes common table display issues
+ */
+
+/* ============================================
+   CRITICAL TABLE DISPLAY FIXES
+   ============================================ */
+
+/* Fix table display mode */
+table {
+  display: table !important;
+  table-layout: auto;
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+/* Table wrapper - use this to make tables scrollable */
+.table-wrapper,
+.table-container {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  display: block;
+  max-height: 80vh;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* Table inside wrapper must display as table */
+.table-wrapper > table,
+.table-container > table {
+  display: table !important;
+  width: 100%;
+  min-width: 100%;
+  margin: 0;
+}
+
+/* Table header group */
+table thead {
+  display: table-header-group !important;
+}
+
+/* Sticky header in scrollable containers */
+.table-wrapper table thead,
+.table-container table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* Table body group */
+table tbody {
+  display: table-row-group !important;
+}
+
+/* Table footer group */
+table tfoot {
+  display: table-footer-group !important;
+}
+
+/* Table rows */
+table tr {
+  display: table-row !important;
+}
+
+/* Table cells */
+table th,
+table td {
+  display: table-cell !important;
+  padding: 0.75rem;
+  border: 1px solid #e0e0e0;
+  vertical-align: middle;
+}
+
+/* Prevent cell content overflow issues */
+table th,
+table td {
+  overflow: hidden;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
+}
+
+/* Allow wrapping in specific cells */
+table td.wrap,
+table th.wrap {
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Prevent text overflow in cells that need it */
+table td.ellipsis,
+table th.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+/* ============================================
+   LECTURER TABLE SPECIFIC FIXES
+   ============================================ */
+
+.lecturer-table,
+[class*="lecturer"],
+[class*="Lecturer"],
+[class*="teacher"],
+[class*="Teacher"] {
+  display: table !important;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.lecturer-table thead {
+  display: table-header-group !important;
+}
+
+.lecturer-table tbody {
+  display: table-row-group !important;
+}
+
+.lecturer-table tr {
+  display: table-row !important;
+}
+
+.lecturer-table th,
+.lecturer-table td {
+  display: table-cell !important;
+}
+
+/* ============================================
+   RESPONSIVE FIXES
+   ============================================ */
+
+@media (max-width: 768px) {
+  /* Prevent page overflow on mobile */
+  body {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+  }
+
+  /* Ensure table still displays as table on mobile */
+  table {
+    display: table !important;
+    min-width: 600px;
+  }
+
+  .table-wrapper,
+  .table-container {
+    overflow-x: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+}
+
+/* Global overflow prevention */
+* {
+  box-sizing: border-box;
+}
+
+body, html {
+  overflow-x: hidden;
+  max-width: 100%;
+  width: 100%;
+}
+
+/* ============================================
+   FRAMEWORK-SPECIFIC FIXES
+   ============================================ */
+
+/* React Table */
+.rt-table {
+  display: table !important;
+}
+
+.rt-thead {
+  display: table-header-group !important;
+}
+
+.rt-tbody {
+  display: table-row-group !important;
+}
+
+/* Material-UI */
+.MuiTable-root {
+  display: table !important;
+}
+
+.MuiTableHead-root {
+  display: table-header-group !important;
+}
+
+.MuiTableBody-root {
+  display: table-row-group !important;
+}
+
+/* Ant Design */
+.ant-table {
+  display: table !important;
+}
+
+.ant-table-thead {
+  display: table-header-group !important;
+}
+
+.ant-table-tbody {
+  display: table-row-group !important;
+}
+
+/* Bootstrap */
+.table {
+  display: table !important;
+}
+
+.table thead {
+  display: table-header-group !important;
+}
+
+.table tbody {
+  display: table-row-group !important;
+}

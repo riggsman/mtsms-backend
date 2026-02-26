@@ -1,0 +1,20 @@
+fastapi[standard]
+sqlalchemy
+# mysql-connector-python
+passlib[argon2]
+argon2-cffi
+pyjwt
+python-multipart
+python-dotenv
+pytest
+httpx
+aiofiles
+alembic
+databases
+pymysql
+redis
+python-jose
+aiosmtplib
+reportlab 
+python-docx 
+beautifulsoup4

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Responsive Navbar</title>
+    <link rel="stylesheet" href="Navbar.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <!-- Logo/Brand -->
+            <div class="navbar-brand">
+                <a href="/" class="brand-link">
+                    <span class="brand-text">MTSMS</span>
+                </a>
+            </div>
+
+            <!-- Desktop Menu -->
+            <ul class="navbar-menu" id="navbarMenu">
+                <li class="navbar-item">
+                    <a href="/dashboard" class="navbar-link">Dashboard</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/students" class="navbar-link">Students</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/teachers" class="navbar-link">Teachers</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/courses" class="navbar-link">Courses</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/schedules" class="navbar-link">Schedules</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/assignments" class="navbar-link">Assignments</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/announcements" class="navbar-link">Announcements</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/activities" class="navbar-link">Activities</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/users" class="navbar-link">Users</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/classes" class="navbar-link">Classes</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/enrollments" class="navbar-link">Enrollments</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/complaints" class="navbar-link">Complaints</a>
+                </li>
+                <li class="navbar-item">
+                    <a href="/settings" class="navbar-link">Settings</a>
+                </li>
+            </ul>
+
+            <!-- User Menu -->
+            <div class="navbar-user">
+                <div class="user-info">
+                    <span class="user-name" id="userName">Admin User</span>
+                    <span class="user-role" id="userRole">admin</span>
+                </div>
+                <button class="logout-btn" onclick="handleLogout()">Logout</button>
+            </div>
+
+            <!-- Mobile Menu Toggle -->
+            <button class="navbar-toggle" id="navbarToggle" onclick="toggleMenu()" aria-label="Toggle menu">
+                <span class="hamburger-line"></span>
+                <span class="hamburger-line"></span>
+                <span class="hamburger-line"></span>
+            </button>
+        </div>
+    </nav>
+
+    <script>
+        let isMenuOpen = false;
+
+        function toggleMenu() {
+            const menu = document.getElementById('navbarMenu');
+            const toggle = document.getElementById('navbarToggle');
+            
+            isMenuOpen = !isMenuOpen;
+            menu.classList.toggle('active', isMenuOpen);
+            toggle.classList.toggle('active', isMenuOpen);
+        }
+
+        function handleLogout() {
+            // Implement logout logic
+            console.log('Logout clicked');
+            // window.location.href = '/login';
+        }
+
+        // Close menu when clicking outside on mobile
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('navbarMenu');
+            const toggle = document.getElementById('navbarToggle');
+            const isClickInside = menu.contains(e.target) || toggle.contains(e.target);
+            
+            if (!isClickInside && isMenuOpen && window.innerWidth < 768) {
+                toggleMenu();
+            }
+        });
+
+        // Close menu when window is resized to desktop size
+        window.addEventListener('resize', () => {
+            if (window.innerWidth >= 768 && isMenuOpen) {
+                toggleMenu();
+            }
+        });
+
+        // Close menu when a link is clicked on mobile
+        document.querySelectorAll('.navbar-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth < 768 && isMenuOpen) {
+                    toggleMenu();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

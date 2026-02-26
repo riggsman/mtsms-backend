@@ -1,0 +1,249 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+.idea/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath
+*.sage.py
+
+# Environments
+.env.local
+.env.*.local
+.env.development
+.env.production
+.venv
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# pytype
+.pytype/
+
+# Cython
+cython_debug/
+
+# IDEs
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# FastAPI / Uvicorn
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Alembic
+# Keep migrations but ignore compiled versions
+alembic/versions/__pycache__/
+
+# Uploads and User Content
+uploads/
+media/
+static/uploads/
+*.pdf
+*.docx
+*.doc
+*.xlsx
+*.xls
+*.csv
+!scripts/**/*.csv
+!scripts/**/*.xlsx
+
+# Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Frontend Build
+frontend/dist/
+frontend/build/
+frontend/.next/
+frontend/out/
+frontend/.vite/
+frontend/.cache/
+
+# Frontend Dependencies
+frontend/package-lock.json
+frontend/yarn.lock
+frontend/pnpm-lock.yaml
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+*.swo
+*~
+
+# Coverage Reports
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# Pytest
+.pytest_cache/
+.pytest_cache/
+.tox/
+.hypothesis/
+
+# Type Checking
+.pytype/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Profiling
+.prof
+
+# Secrets and Keys
+*.pem
+*.key
+*.cert
+secrets/
+.secrets/
+
+# Local Configuration
+config.local.py
+settings.local.py
+local_settings.py
+
+# Backup Files
+*.bak
+*.backup
+*.old
+
+# Compiled Files
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / Packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Project Specific
+# Keep these if needed, uncomment to ignore:
+# migrations/
+# alembic.ini (if you want to ignore config changes)
+
+# Keep important files
+!requirements.txt
+!README.md
+!*.md
+!.gitignore
+
+# Keep uploads directory structure but ignore contents
+uploads/*
+!uploads/.gitkeep
+uploads/notes/*
+!uploads/notes/.gitkeep
+uploads/notes/pdf/*
+!uploads/notes/pdf/.gitkeep
+uploads/notes/word/*
+!uploads/notes/word/.gitkeep

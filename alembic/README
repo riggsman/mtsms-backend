@@ -1,0 +1,36 @@
+Generic single-database configuration with an async focus.
+
+This is a minimal Alembic setup for managing database migrations.
+
+The `alembic.ini` file contains the main Alembic configuration.
+The `env.py` file is the script that Alembic runs to handle migrations.
+
+## Usage
+
+### Create a new migration
+```bash
+alembic revision --autogenerate -m "Description of changes"
+```
+
+### Apply migrations
+```bash
+alembic upgrade head
+```
+
+### Rollback migrations
+```bash
+alembic downgrade -1  # Rollback one version
+alembic downgrade base  # Rollback all migrations
+```
+
+### View current migration status
+```bash
+alembic current
+alembic history
+```
+
+## Important Notes
+
+- This setup handles both `DefaultBase` (global database) and `BaseModel_Base` (tenant/shared database) models
+- All models must be imported in `env.py` for autogenerate to work properly
+- The database URL is read from `app.conf.config.settings.DATABASE_URL`

@@ -1,0 +1,24 @@
+/* 
+ * Quick Fix - Add overflow: auto to all tables and forms
+ * Add this single line to your existing CSS or import this file
+ * This is the simplest solution
+ */
+
+/* All tables */
+table { overflow: auto !important; }
+
+/* All forms */
+form { overflow: auto !important; }
+
+/* Table containers */
+.table-wrapper,
+.table-container,
+[class*="table"] { overflow: auto !important; }
+
+/* Form containers */
+.form-container,
+.form-wrapper,
+[class*="form"] { overflow: auto !important; }
+
+/* Textareas */
+textarea { overflow-y: auto !important; }

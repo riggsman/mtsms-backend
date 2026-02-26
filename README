@@ -1,0 +1,225 @@
+# Multi-Tenant School Management System (MTSMS)
+
+A comprehensive multi-tenant school management system built with FastAPI, providing isolated databases for each institution/tenant.
+
+## 🏗️ Project Structure
+
+```
+MTSMS/
+├── app/
+│   ├── apis/                    # Business logic layer
+│   │   ├── login.py            # Authentication logic
+│   │   ├── students.py         # Student operations
+│   │   ├── teachers.py         # Teacher operations
+│   │   ├── courses.py          # Course operations
+│   │   ├── tenant.py           # Tenant operations
+│   │   └── users.py            # User operations
+│   ├── authentication/         # Authentication utilities
+│   │   └── authenticator.py   # JWT, password hashing
+│   ├── conf/                   # Configuration
+│   │   └── config.py           # Settings from environment
+│   ├── database/               # Database configuration
+│   │   ├── base.py             # Global database
+│   │   └── sessionManager.py  # Tenant-aware sessions
+│   ├── dependencies/           # FastAPI dependencies
+│   │   ├── auth.py             # Authentication dependencies
+│   │   └── tenantDependency.py # Tenant resolution
+│   ├── exceptions/             # Custom exceptions
+│   │   └── exceptions.py      # Exception classes
+│   ├── helpers/                # Utility functions
+│   │   ├── formater.py        # String formatting
+│   │   ├── logger.py          # Logging setup
+│   │   └── pagination.py      # Pagination utilities
+│   ├── models/                 # SQLAlchemy models
+│   │   ├── user.py            # User model
+│   │   ├── student.py        # Student model
+│   │   ├── teacher.py        # Teacher model
+│   │   ├── course.py         # Course model
+│   │   ├── tenant.py         # Tenant model
+│   │   ├── guardian.py       # Guardian model
+│   │   ├── class.py          # Class model
+│   │   ├── department.py     # Department model
+│   │   ├── academic_year.py  # Academic Year model
+│   │   └── role.py           # Role enum
+│   ├── routes/                 # API route handlers
+│   │   ├── login.py          # Authentication routes
+│   │   ├── register_user.py  # Registration routes
+│   │   ├── students.py       # Student routes
+│   │   ├── teachers.py       # Teacher routes
+│   │   ├── courses.py        # Course routes
+│   │   └── tenants.py        # Tenant routes
+│   └── schemas/                # Pydantic schemas
+│       ├── login.py
+│       ├── register_user.py
+│       ├── student.py
+│       ├── teachers.py
+│       ├── courses.py
+│       └── tenant.py
+├── server.py                   # FastAPI application entry point
+├── requirements.txt            # Python dependencies
+├── .env.example                # Environment variables template
+├── PROJECT_ANALYSIS.md        # Project analysis document
+└── IMPLEMENTATION_SUMMARY.md  # Implementation details
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.8+
+- MySQL 5.7+ or MariaDB
+- pip
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd MTSMS
+   ```
+
+2. **Create virtual environment**
+   ```bash
+   python -m venv env
+   source env/bin/activate  # On Windows: env\Scripts\activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your database credentials and secret key
+   ```
+
+5. **Start the server**
+   ```bash
+   uvicorn server:app --reload
+   ```
+
+The API will be available at `http://localhost:8000`
+
+API documentation: `http://localhost:8000/docs`
+
+## 🔐 Authentication
+
+All API endpoints (except login, register, and health check) require authentication.
+
+### Login
+```bash
+POST /auth/v1/login
+Headers:
+  X-Tenant-Name: <tenant_name>
+Body:
+  {
+    "username": "admin",
+    "password": "password123"
+  }
+```
+
+### Using the Token
+Include the JWT token in subsequent requests:
+```
+Authorization: Bearer <token>
+X-Tenant-Name: <tenant_name>
+```
+
+## 📚 API Endpoints
+
+### Authentication
+- `POST /auth/v1/login` - User login
+- `POST /auth/v1/verify_token` - Verify JWT token
+
+### Registration
+- `POST /api/v1/register` - Register new user (requires X-Tenant-Name)
+
+### Tenants (Super Admin only)
+- `POST /api/v1/tenants` - Create new tenant
+- `GET /api/v1/tenants/{name}` - Get tenant info
+
+### Students
+- `POST /api/v1/students` - Create student (Admin/Staff)
+- `GET /api/v1/students` - List students (paginated)
+- `GET /api/v1/students/{id}` - Get student
+- `PUT /api/v1/students/{id}` - Update student (Admin/Staff)
+- `DELETE /api/v1/students/{id}` - Delete student (Admin)
+
+### Teachers
+- `POST /api/v1/teachers` - Create teacher (Admin/Staff)
+- `GET /api/v1/teachers` - List teachers (paginated)
+- `GET /api/v1/teachers/{id}` - Get teacher
+- `PUT /api/v1/teachers/{id}` - Update teacher (Admin/Staff)
+- `DELETE /api/v1/teachers/{id}` - Delete teacher (Admin)
+
+### Courses
+- `POST /api/v1/courses` - Create course (Admin/Staff/Teacher)
+- `GET /api/v1/courses` - List courses (paginated)
+- `GET /api/v1/courses/{id}` - Get course
+- `PUT /api/v1/courses/{id}` - Update course (Admin/Staff/Teacher)
+- `DELETE /api/v1/courses/{id}` - Delete course (Admin)
+
+## 👥 Roles & Permissions
+
+- **SUPER_ADMIN**: Create/manage tenants
+- **ADMIN**: Full access to all resources within tenant
+- **STAFF**: Create/update students, teachers, courses
+- **TEACHER**: Create/update courses
+- **STUDENT**: Read-only access (extendable)
+- **PARENT**: Read-only access (extendable)
+
+## 🔒 Security Features
+
+- ✅ JWT-based authentication
+- ✅ Password strength validation
+- ✅ Role-based access control (RBAC)
+- ✅ Multi-tenant database isolation
+- ✅ Soft deletes (data retention)
+- ✅ Environment-based configuration
+- ✅ CORS protection
+
+## 📝 Environment Variables
+
+See `.env.example` for all required variables:
+- `DATABASE_URL` - Global database connection
+- `SECRET_KEY` - JWT secret key
+- `CORS_ORIGINS` - Allowed CORS origins
+- `ACCESS_TOKEN_EXPIRE_MINUTES` - Token expiration time
+
+## 🧪 Testing
+
+```bash
+# Run tests
+pytest
+```
+
+## 📖 Documentation
+
+- **PROJECT_ANALYSIS.md** - Detailed project analysis and proposals
+- **IMPLEMENTATION_SUMMARY.md** - Complete implementation details
+- **API Docs** - Available at `/docs` when server is running
+
+## 🛠️ Development
+
+### Code Structure
+- **Models**: SQLAlchemy ORM models
+- **Schemas**: Pydantic validation schemas
+- **APIs**: Business logic layer
+- **Routes**: FastAPI route handlers
+- **Dependencies**: Reusable FastAPI dependencies
+
+### Adding New Features
+1. Create model in `app/models/`
+2. Create schema in `app/schemas/`
+3. Create API functions in `app/apis/`
+4. Create routes in `app/routes/`
+5. Register routes in `server.py`
+
+## 📄 License
+
+[Your License Here]
+
+## 🤝 Contributing
+
+[Your Contributing Guidelines Here]
