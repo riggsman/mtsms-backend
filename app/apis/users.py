@@ -553,3 +553,121 @@ def suspend_user(db: Session, user_id: int, reason: str, current_user: Optional[
         logger.error(f"Error sending suspension email to user {user.email}: {e}")
     
     return user
+
+def suspend_user_by_student_id(db: Session, student_id: int, reason: str, current_user: Optional[User] = None) -> User:
+    """Suspend a student account by student_id (creates user account if it doesn't exist)"""
+    from app.models.student import Student
+    
+    # Get student by ID
+    student = db.query(Student).filter(
+        Student.id == student_id,
+        Student.deleted_at.is_(None)
+    ).first()
+    
+    if not student:
+        raise NotFoundError(f"Student with ID {student_id} not found")
+    
+    # Check if user account already exists for this student (by email)
+    existing_user = get_user_by_email(db, student.email)
+    
+    if existing_user:
+        # User account exists, suspend it
+        if existing_user.is_active == "suspended":
+            from app.exceptions import ValidationError
+            raise ValidationError("User is already suspended")
+        
+        existing_user.is_active = "suspended"
+        db.commit()
+        db.refresh(existing_user)
+        user_to_suspend = existing_user
+    else:
+        # No user account exists, create one with suspended status
+        if not current_user or not current_user.institution_id:
+            raise ValidationError("institution_id is required to create user account")
+        
+        # Generate username
+        username = student.student_id or student.email.split('@')[0]
+        
+        # Check if username already exists
+        if get_user_by_username(db, username):
+            username = f"{username}_{student.id}"
+        
+        # Create new user account with suspended status
+        new_user = User(
+            institution_id=current_user.institution_id,
+            firstname=student.firstname,
+            middlename=student.middlename,
+            lastname=student.lastname,
+            gender=student.gender,
+            address=student.address,
+            email=student.email,
+            phone=student.phone,
+            username=username,
+            password=hash_password("TEMP_PASSWORD_" + str(student.id)),  # Temporary password, user will need to reset
+            role="student",
+            user_type="TENANT",
+            is_active="suspended",  # Create as suspended
+            must_change_password="true"
+        )
+        
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        user_to_suspend = new_user
+    
+    # Log activity
+    try:
+        log_update_activity(
+            db=db,
+            user_id=current_user.id if current_user else None,
+            entity_type="user",
+            entity_id=user_to_suspend.id,
+            changes={"is_active": "suspended", "suspension_reason": reason},
+            institution_id=current_user.institution_id if current_user else None
+        )
+    except Exception as e:
+        # Don't fail the operation if activity logging fails
+        pass
+    
+    # Send suspension email asynchronously
+    try:
+        from app.helpers.async_helper import run_async_safe
+        # Get tenant/institution name and login URL from tenant domain
+        institution_name = None
+        login_url = None
+        try:
+            from app.database.base import get_db_session
+            global_db = next(get_db_session())
+            try:
+                from app.models.tenant import Tenant
+                tenant = global_db.query(Tenant).filter(
+                    Tenant.database_name == db.bind.url.database
+                ).first()
+                if tenant:
+                    institution_name = tenant.name
+                    if tenant.domain:
+                        login_url = f"https://{tenant.domain}"
+            except Exception as tenant_error:
+                logger.warning(f"Error getting tenant info: {tenant_error}")
+            finally:
+                global_db.close()
+        except Exception as db_error:
+            logger.warning(f"Error accessing global database: {db_error}")
+        
+        student_name = f"{student.firstname} {student.lastname}".strip()
+        
+        run_async_safe(
+            EmailService.send_student_suspension_email(
+                student_name=student_name,
+                student_email=student.email,
+                student_id=student.student_id or str(student.id),
+                reason=reason,
+                institution_name=institution_name,
+                login_url=login_url
+            )
+        )
+    except Exception as e:
+        # Don't fail suspension if email sending fails
+        logger.error(f"Error sending suspension email to student {student.email}: {e}")
+    
+    return user_to_suspend

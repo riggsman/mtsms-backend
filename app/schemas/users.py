@@ -131,3 +131,4 @@ class ChangePasswordRequest(BaseModel):
 
 class SuspendUserRequest(BaseModel):
     reason: str  # Required reason for suspension
+    student_id: Optional[int] = None  # Optional: if provided, will suspend by student_id instead of user_id

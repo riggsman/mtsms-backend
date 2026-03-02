@@ -4,7 +4,7 @@ from typing import Optional
 from app.schemas.users import UserRequest, UserResponse, UserUpdate, StudentPasswordAssign, ChangePasswordRequest, SuspendUserRequest
 from app.apis.users import (
     create_user, get_user, get_users,
-    update_user, delete_user, assign_student_password, change_password, suspend_user
+    update_user, delete_user, assign_student_password, change_password, suspend_user, suspend_user_by_student_id
 )
 from app.dependencies.tenantDependency import get_db, get_db_for_admin
 from app.dependencies.auth import get_current_user_tenant, require_any_role, require_any_role_admin
@@ -231,6 +231,21 @@ def suspend_user_endpoint(
     return suspend_user(
         db=db,
         user_id=user_id,
+        reason=suspend_data.reason,
+        current_user=current_user
+    )
+
+@user.post("/students/{student_id}/suspend", response_model=UserResponse)
+def suspend_student_endpoint(
+    student_id: int,
+    suspend_data: SuspendUserRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+):
+    """Suspend a student account (by student_id)"""
+    return suspend_user_by_student_id(
+        db=db,
+        student_id=student_id,
         reason=suspend_data.reason,
         current_user=current_user
     )
