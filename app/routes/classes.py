@@ -40,14 +40,49 @@ def get_class_endpoint(
 
 @class_router.get("/classes", response_model=PaginatedResponse[ClassResponse])
 def list_classes(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=100),
     institution_level: Optional[str] = Query(None),
+    category: Optional[str] = Query(None, description="Filter by category (HI or SI). Maps to institution_level."),
     department_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
-    """Get list of classes with pagination"""
+    """Get list of classes with pagination. If page and page_size are not provided, returns all classes."""
+    # If no pagination params, return all classes
+    if page is None or page_size is None:
+        # Determine institution_id for filtering
+        institution_id = None
+        if current_user:
+            is_system_admin = current_user.role and current_user.role.startswith('system_')
+            if not is_system_admin:
+                institution_id = current_user.institution_id
+                if not institution_id:
+                    from app.exceptions import ValidationError
+                    raise ValidationError("User must belong to an institution to view classes")
+        
+        # Use category if provided, otherwise use institution_level
+        filter_level = category or institution_level
+        
+        # Get all classes without pagination
+        all_classes, _ = get_classes(
+            db=db,
+            skip=0,
+            limit=10000,  # Large limit to get all
+            institution_id=institution_id,
+            institution_level=filter_level,
+            department_id=department_id
+        )
+        
+        # Return as paginated response with all items
+        return PaginatedResponse.create(
+            items=all_classes,
+            total=len(all_classes),
+            page=1,
+            page_size=len(all_classes) if len(all_classes) > 0 else 1
+        )
+    
+    # Paginated request
     skip = (page - 1) * page_size
     
     # Determine institution_id for filtering
@@ -60,12 +95,15 @@ def list_classes(
                 from app.exceptions import ValidationError
                 raise ValidationError("User must belong to an institution to view classes")
     
+    # Use category if provided, otherwise use institution_level
+    filter_level = category or institution_level
+    
     classes, total = get_classes(
         db=db,
         skip=skip,
         limit=page_size,
         institution_id=institution_id,
-        institution_level=institution_level,
+        institution_level=filter_level,
         department_id=department_id
     )
     return PaginatedResponse.create(

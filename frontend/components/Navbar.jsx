@@ -27,6 +27,8 @@ const Navbar = ({ user, onLogout }) => {
 
   const menuItems = [
     { label: 'Dashboard', path: '/dashboard', roles: ['admin', 'staff', 'teacher', 'student', 'parent'] },
+    { label: 'Financial Overview', path: '/riggstech/admin/financial-overview', roles: ['admin', 'staff', 'super_admin'] },
+    { label: 'Subscription Services', path: '/riggstech/admin/subscription-services', roles: ['admin', 'super_admin'] },
     { label: 'Students', path: '/students', roles: ['admin', 'staff', 'teacher'] },
     { label: 'Teachers', path: '/teachers', roles: ['admin', 'staff'] },
     { label: 'Courses', path: '/courses', roles: ['admin', 'staff', 'teacher'] },

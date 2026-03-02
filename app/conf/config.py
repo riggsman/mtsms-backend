@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "*")
     
     # Application
-    APP_NAME: str = os.getenv("APP_NAME", "School Management System")
+    # Default name is EduSphere, but can be overridden via APP_NAME in the .env file
+    APP_NAME: str = os.getenv("APP_NAME", "EduSphere")
     APP_VERSION: str = os.getenv("APP_VERSION", "1.0.0")
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     
@@ -31,9 +32,13 @@ class Settings(BaseSettings):
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "")
-    SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "School Management System")
+    SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "EduSphere")
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True").lower() == "true"
     EMAIL_ENABLED: bool = os.getenv("EMAIL_ENABLED", "False").lower() == "true"
+
+    # System admin notification emails (fallback if not configured in DB)
+    # Comma-separated list in .env, e.g. "admin1@example.com,admin2@example.com"
+    SYSTEM_ADMIN_NOTIFICATION_EMAILS: str = os.getenv("SYSTEM_ADMIN_NOTIFICATION_EMAILS", "")
     
     class Config:
         env_file = ".env"
@@ -45,6 +50,22 @@ class Settings(BaseSettings):
         if self.CORS_ORIGINS == "*":
             return ["*"]
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+
+    @property
+    def system_admin_notification_emails(self) -> List[str]:
+        """
+        Get system admin notification emails from environment.
+        Returns at most 3 cleaned email strings.
+        """
+        if not self.SYSTEM_ADMIN_NOTIFICATION_EMAILS:
+            return []
+        emails = [
+            email.strip()
+            for email in self.SYSTEM_ADMIN_NOTIFICATION_EMAILS.split(",")
+            if email.strip()
+        ]
+        # Limit to 3 as per requirement
+        return emails[:3]
 
 @lru_cache()
 def get_settings() -> Settings:

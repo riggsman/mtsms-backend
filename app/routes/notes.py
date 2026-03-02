@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Form, File, UploadFile
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.schemas.note import NoteCreate, NoteUpdate, NoteResponse
@@ -8,7 +8,9 @@ from app.apis.notes import (
     get_notes,
     update_note,
     delete_note,
-    update_note_file_paths
+    update_note_file_paths,
+    create_note_with_files,
+    update_note_with_files
 )
 from app.apis.teachers import get_teacher_by_user_id
 from app.dependencies.tenantDependency import get_db
@@ -148,24 +150,38 @@ def get_note_endpoint(
     return NoteResponse(**note_dict)
 
 @note_router.post("/notes", response_model=NoteResponse, status_code=201)
-def create_note_endpoint(
-    note_data: NoteCreate,
+async def create_note_endpoint(
+    title: str = Form(...),
+    course_id: int = Form(...),
+    department_id: int = Form(...),
+    course_code: Optional[str] = Form(None),
+    lecturer_id: Optional[int] = Form(None),
+    content: Optional[str] = Form(None),
+    pdf_file: Optional[UploadFile] = File(None),
+    word_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_any_role(UserRole.STAFF, UserRole.ADMIN, UserRole.SUPER_ADMIN))
 ):
-    """Create a new note (staff/admin only)"""
+    """Create a new note (staff/admin only). Supports both text content and file uploads."""
     if not current_user.institution_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must belong to an institution to create notes"
         )
     
+    # Validation: Either content or at least one file must be provided
+    if not content and not pdf_file and not word_file:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please provide either note content or upload at least one file (PDF or Word)"
+        )
+    
     # Determine lecturer_id
-    lecturer_id = None
+    final_lecturer_id = None
     
     # If lecturer_id is provided in request, use it (for admins)
-    if note_data.lecturer_id:
-        lecturer_id = note_data.lecturer_id
+    if lecturer_id:
+        final_lecturer_id = lecturer_id
         # Verify the lecturer exists and belongs to the institution
         lecturer = db.query(Teacher).filter(
             Teacher.id == lecturer_id,
@@ -181,7 +197,7 @@ def create_note_endpoint(
         # For staff members, try to get lecturer_id from their linked teacher profile
         lecturer = get_teacher_by_user_id(db, current_user.id)
         if lecturer:
-            lecturer_id = lecturer.id
+            final_lecturer_id = lecturer.id
         elif current_user.role in ["admin", "super_admin"]:
             # Admins must specify which staff member this note belongs to
             raise HTTPException(
@@ -195,14 +211,37 @@ def create_note_endpoint(
                 detail="Only staff members can create notes. Please ensure your account is linked to a staff/teacher profile."
             )
     
-    # Create note with lecturer_id in the note_data
-    note_data.lecturer_id = lecturer_id
-    note = create_note(
-        db=db,
-        note=note_data,
-        institution_id=current_user.institution_id,
-        current_user=current_user
-    )
+    # If files are provided, use file upload endpoint
+    if pdf_file or word_file:
+        note = await create_note_with_files(
+            db=db,
+            title=title,
+            course_id=course_id,
+            department_id=department_id,
+            course_code=course_code,
+            lecturer_id=final_lecturer_id,
+            content=content or '',
+            pdf_file=pdf_file,
+            word_file=word_file,
+            institution_id=current_user.institution_id,
+            current_user=current_user
+        )
+    else:
+        # Use regular text-based note creation
+        note_data = NoteCreate(
+            title=title,
+            course_id=course_id,
+            department_id=department_id,
+            course_code=course_code,
+            lecturer_id=final_lecturer_id,
+            content=content or ''
+        )
+        note = create_note(
+            db=db,
+            note=note_data,
+            institution_id=current_user.institution_id,
+            current_user=current_user
+        )
     
     # Enrich with related data for response
     note_dict = {
@@ -243,7 +282,7 @@ def create_note_endpoint(
 @note_router.post("/notes/{note_id}/generate-files", response_model=NoteResponse)
 def generate_note_files(
     note_id: int,
-    format_type: str = Query(..., regex="^(pdf|word|both)$"),
+    format_type: str = Query(..., pattern="^(pdf|word|both)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_any_role(UserRole.STAFF, UserRole.ADMIN, UserRole.SUPER_ADMIN))
 ):
@@ -328,26 +367,59 @@ def generate_note_files(
     return NoteResponse(**note_dict)
 
 @note_router.put("/notes/{note_id}", response_model=NoteResponse)
-def update_note_endpoint(
+async def update_note_endpoint(
     note_id: int,
-    note_update: NoteUpdate,
+    title: Optional[str] = Form(None),
+    course_id: Optional[int] = Form(None),
+    department_id: Optional[int] = Form(None),
+    course_code: Optional[str] = Form(None),
+    content: Optional[str] = Form(None),
+    pdf_file: Optional[UploadFile] = File(None),
+    word_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_any_role(UserRole.STAFF, UserRole.ADMIN, UserRole.SUPER_ADMIN))
 ):
-    """Update a note (staff/admin only)"""
+    """Update a note (staff/admin only). Supports both text content and file uploads."""
     if not current_user.institution_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must belong to an institution to update notes"
         )
     
-    note = update_note(
-        db=db,
-        note_id=note_id,
-        note_update=note_update,
-        institution_id=current_user.institution_id,
-        current_user=current_user
-    )
+    # Get existing note
+    note = get_note(db, note_id, current_user.institution_id)
+    
+    # If files are provided, use file upload endpoint
+    if pdf_file or word_file:
+        note = await update_note_with_files(
+            db=db,
+            note_id=note_id,
+            title=title,
+            course_id=course_id,
+            department_id=department_id,
+            course_code=course_code,
+            content=content,
+            pdf_file=pdf_file,
+            word_file=word_file,
+            institution_id=current_user.institution_id,
+            current_user=current_user
+        )
+    else:
+        # Use regular text-based note update
+        note_update = NoteUpdate(
+            title=title,
+            course_id=course_id,
+            department_id=department_id,
+            course_code=course_code,
+            content=content
+        )
+        note = update_note(
+            db=db,
+            note_id=note_id,
+            note_update=note_update,
+            institution_id=current_user.institution_id,
+            current_user=current_user
+        )
     
     # Enrich with related data
     note_dict = {

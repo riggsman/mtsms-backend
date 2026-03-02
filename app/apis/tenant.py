@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from fastapi import UploadFile
 from app.database.sessionManager import create_tenant_database, get_tenant_db, get_shared_db, get_database_mode
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -10,7 +11,7 @@ from app.authentication.authenticator import hash_password
 from app.services.email_service import EmailService
 from app.helpers.async_helper import run_async_safe
 
-async def create_new_tenant(db: Session, tenant: TenantRequest):
+async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optional[UploadFile] = None):
     """Create a new tenant"""
     # Check if tenant already exists
     existing = get_tenant_by_name(db, tenant.name)
@@ -37,6 +38,7 @@ async def create_new_tenant(db: Session, tenant: TenantRequest):
     
     new_tenant = Tenant(
         name=tenant.name,
+        category=tenant.category.upper(),  # Ensure uppercase (HI or SI)
         domain=tenant.domain,
         database_url=tenant_database_url,
         is_active=tenant.is_active if tenant.is_active is not None else True
@@ -127,14 +129,55 @@ async def create_new_tenant(db: Session, tenant: TenantRequest):
             if should_close:
                 user_db.close()
     
+    # Create tenant_settings entry if it doesn't exist (for logo storage)
+    from app.models.tenant_settings import TenantSettings
+    mode = get_database_mode()
+    if mode == 'shared':
+        settings_db = get_shared_db()()
+        should_close_settings = False
+    else:
+        TenantSessionLocal = get_tenant_db(tenant.name)
+        settings_db = TenantSessionLocal()
+        should_close_settings = True
+    
+    try:
+        # Check if tenant_settings already exists
+        existing_settings = settings_db.query(TenantSettings).filter(
+            TenantSettings.institution_id == tenant_id
+        ).first()
+        
+        if not existing_settings:
+            # Create new tenant_settings entry
+            new_settings = TenantSettings(institution_id=tenant_id)
+            settings_db.add(new_settings)
+            settings_db.commit()
+            settings_db.refresh(new_settings)
+    except Exception as e:
+        from app.helpers.logger import logger
+        logger.warning(f"Could not create tenant_settings for tenant {tenant.name}: {e}")
+    finally:
+        if should_close_settings:
+            settings_db.close()
+    
+    # Handle logo upload if provided during creation
+    if logo_file:
+        await _upload_tenant_logo_safe(
+            tenant=new_tenant,
+            tenant_id=tenant_id,
+            logo_file=logo_file,
+            global_db=db  # Pass global database session
+        )
+    
+    # Enrich tenant with admin_username and logo_url before returning
+    new_tenant = _enrich_tenant(db, new_tenant)
     return new_tenant
 
 def get_tenant_by_name(db: Session, name: str) -> Optional[Tenant]:
     """Get tenant by name"""
     tenant = db.query(Tenant).filter(Tenant.name == name).first()
     if tenant:
-        # Get admin username
-        tenant = _add_admin_username(db, tenant)
+        # Enrich tenant with admin_username and logo_url
+        tenant = _enrich_tenant(db, tenant)
     return tenant
 
 def get_tenant_by_id(db: Session, tenant_id: int) -> Tenant:
@@ -142,8 +185,8 @@ def get_tenant_by_id(db: Session, tenant_id: int) -> Tenant:
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         raise NotFoundError(f"Tenant with ID {tenant_id} not found")
-    # Get admin username
-    tenant = _add_admin_username(db, tenant)
+    # Enrich tenant with admin_username and logo_url
+    tenant = _enrich_tenant(db, tenant)
     return tenant
 
 def _add_admin_username(db: Session, tenant: Tenant) -> Tenant:
@@ -182,6 +225,72 @@ def _add_admin_username(db: Session, tenant: Tenant) -> Tenant:
         setattr(tenant, 'admin_username', None)
     return tenant
 
+
+def _add_logo_url(db: Session, tenant: Tenant) -> Tenant:
+    """Helper function to add logo URL to tenant object"""
+    try:
+        # First check if tenant has logo_url directly in the tenant table
+        if tenant.logo_url:
+            # Logo URL is already stored in tenant table, use it
+            return tenant
+        
+        # Fallback: Check tenant_settings if logo_url not in tenant table
+        from app.models.tenant_settings import TenantSettings
+        from app.models.tenant import Tenant
+        from app.helpers.file_upload import get_file_url
+        
+        # Determine which database to use for tenant_settings
+        mode = get_database_mode()
+        if mode == 'shared':
+            # In shared mode, use the same db session (shared database)
+            tenant_settings = db.query(TenantSettings).filter(
+                TenantSettings.institution_id == tenant.id
+            ).first()
+        else:
+            # In multi-tenant mode, need to query tenant-specific database
+            try:
+                TenantSessionLocal = get_tenant_db(tenant.name)
+                tenant_db = TenantSessionLocal()
+                try:
+                    tenant_settings = tenant_db.query(TenantSettings).filter(
+                        TenantSettings.institution_id == tenant.id
+                    ).first()
+                finally:
+                    tenant_db.close()
+            except Exception:
+                tenant_settings = None
+        
+        if tenant_settings and tenant_settings.logo:
+            # Generate URL for the logo file
+            logo_url = get_file_url(tenant_settings.logo, base_url="/api/v1/uploads")
+            # Update tenant table with logo_url for future use
+            try:
+                tenant.logo_url = logo_url
+                db.commit()
+                db.refresh(tenant)
+            except Exception as e:
+                # If update fails, just set the attribute for this response
+                from app.helpers.logger import logger
+                logger.warning(f"Could not update tenant logo_url in database: {e}")
+                setattr(tenant, 'logo_url', logo_url)
+        else:
+            setattr(tenant, 'logo_url', None)
+    except Exception as e:
+        # Log error but don't fail
+        from app.helpers.logger import logger
+        logger.error(f"Error fetching logo for tenant {tenant.id}: {e}")
+        setattr(tenant, 'logo_url', None)
+    return tenant
+
+
+def _enrich_tenant(db: Session, tenant: Tenant) -> Tenant:
+    """Helper function to enrich tenant with admin_username and logo_url"""
+    print("OK LET US PROCEED..... Enrich tenant with admin_username and logo_url.")
+    tenant = _add_admin_username(db, tenant)
+    tenant = _add_logo_url(db, tenant)
+    print("OK LET US PROCEED..... Enrichment complete. ", tenant.logo_url)
+    return tenant
+
 def get_all_tenants(
     db: Session,
     skip: int = 0,
@@ -190,128 +299,246 @@ def get_all_tenants(
     """Get all tenants with pagination"""
     query = db.query(Tenant)
     tenants, total = paginate_query(query, page=(skip // limit) + 1, page_size=limit)
-    # Add admin username to each tenant
-    tenants = [_add_admin_username(db, tenant) for tenant in tenants]
+    # Enrich each tenant with admin_username and logo_url
+    tenants = [_enrich_tenant(db, tenant) for tenant in tenants]
     return tenants, total
 
-def update_tenant(db: Session, tenant_id: int, tenant_update: TenantUpdate) -> Tenant:
-    """Update a tenant and optionally update admin user"""
-    tenant = get_tenant_by_id(db, tenant_id)
+async def update_tenant(
+    db: Session, 
+    tenant_id: int, 
+    tenant_update: TenantUpdate,
+    logo_file: Optional[UploadFile] = None
+) -> Tenant:
+    """
+    Update a tenant and optionally update admin user and logo.
     
-    # Extract admin user fields
+    Args:
+        db: Database session (global/shared database)
+        tenant_id: ID of the tenant to update
+        tenant_update: TenantUpdate object with fields to update
+        logo_file: Optional logo file to upload
+        
+    Returns:
+        Updated Tenant object with enriched data (admin_username, logo_url)
+    """
+    print("OK LET US PROCEED.... Update tenant function called.")
+    # Get tenant directly without enrichment to avoid redundant queries
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise NotFoundError(f"Tenant with ID {tenant_id} not found")
+    
+    # Extract admin user fields before processing tenant update
     admin_username = tenant_update.admin_username
     admin_password = tenant_update.admin_password
     must_change_password = tenant_update.must_change_password
     
-    # Remove admin fields from tenant update data
-    update_data = tenant_update.dict(exclude_unset=True)
-    update_data.pop('admin_username', None)
-    update_data.pop('admin_password', None)
-    update_data.pop('must_change_password', None)
+    # Prepare tenant update data - only include fields that are not None
+    update_data = {}
+    if tenant_update.name is not None:
+        update_data['name'] = tenant_update.name
+    if tenant_update.category is not None:
+        update_data['category'] = tenant_update.category.upper()
+    if tenant_update.domain is not None:
+        update_data['domain'] = tenant_update.domain
+    if tenant_update.is_active is not None:
+        update_data['is_active'] = tenant_update.is_active
     
-    # Update tenant fields
-    for field, value in update_data.items():
-        setattr(tenant, field, value)
-    
-    db.commit()
-    db.refresh(tenant)
-    
-    # Update admin user if admin fields are provided
-    if admin_username is not None or admin_password is not None or must_change_password is not None:
-        # Determine which database to use for the user
-        user_mode = get_database_mode()
-        if user_mode == 'shared':
-            user_db = get_shared_db()()
-            should_close = False
-        else:
-            # Use tenant-specific database
-            TenantSessionLocal = get_tenant_db(tenant.name)
-            user_db = TenantSessionLocal()
-            should_close = True
+    # Update tenant fields - only update fields that are explicitly provided (not None)
+    if update_data:
+        for field, value in update_data.items():
+            setattr(tenant, field, value)
         
-        try:
-            # Find existing admin user for this tenant
-            admin_user = user_db.query(User).filter(
-                User.institution_id == tenant_id,
-                User.role == 'super_admin'
-            ).first()
+        db.commit()
+        db.refresh(tenant)
+    
+    # Update admin user if admin fields are provided (only if not None)
+    # Check if any admin field is explicitly provided
+    has_admin_updates = (
+        admin_username is not None or 
+        admin_password is not None or 
+        must_change_password is not None
+    )
+    
+    if has_admin_updates:
+        await _update_admin_user(
+            tenant=tenant,
+            tenant_id=tenant_id,
+            admin_username=admin_username,
+            admin_password=admin_password,
+            must_change_password=must_change_password
+        )
+    
+    # Handle logo upload if provided
+    print("OK LET US PROCEED.... Check for logo file.")
+    if logo_file:
+        await _upload_tenant_logo_safe(
+            tenant=tenant,
+            tenant_id=tenant_id,
+            logo_file=logo_file,
+            global_db=db  # Pass global database session
+        )
+    
+    # Enrich tenant with admin_username and logo_url before returning
+    tenant = _enrich_tenant(db, tenant)
+    return tenant
+
+
+async def _update_admin_user(
+    tenant: Tenant,
+    tenant_id: int,
+    admin_username: Optional[str],
+    admin_password: Optional[str],
+    must_change_password: Optional[bool]
+) -> None:
+    """Helper function to update admin user for a tenant"""
+    from app.exceptions import ConflictError, ValidationError
+    
+    # Determine which database to use for the user
+    user_mode = get_database_mode()
+    if user_mode == 'shared':
+        user_db = get_shared_db()()
+        should_close = False
+    else:
+        # Use tenant-specific database
+        TenantSessionLocal = get_tenant_db(tenant.name)
+        user_db = TenantSessionLocal()
+        should_close = True
+    
+    try:
+        # Find existing admin user for this tenant
+        admin_user = user_db.query(User).filter(
+            User.institution_id == tenant_id,
+            User.role == 'super_admin'
+        ).first()
+        
+        if admin_user:
+            # Track if any changes were made
+            has_changes = False
             
-            if admin_user:
-                # Update existing admin user
-                if admin_username is not None:
-                    # Check if new username already exists (excluding current user)
-                    existing_username = user_db.query(User).filter(
-                        User.username == admin_username,
-                        User.id != admin_user.id
-                    ).first()
-                    if existing_username:
-                        from app.exceptions import ConflictError
-                        raise ConflictError(f"Username '{admin_username}' already exists")
+            # Update existing admin user - only update fields that are not None
+            if admin_username is not None:
+                # Check if new username already exists (excluding current user)
+                existing_username = user_db.query(User).filter(
+                    User.username == admin_username,
+                    User.id != admin_user.id
+                ).first()
+                if existing_username:
+                    raise ConflictError(f"Username '{admin_username}' already exists")
+                
+                if admin_user.username != admin_username:
                     admin_user.username = admin_username
+                    has_changes = True
                     # Update email if username changed
                     if tenant.domain:
                         admin_user.email = f'{admin_username}@{tenant.domain}'
-                
-                if admin_password is not None:
-                    admin_user.password = hash_password(admin_password)
-                
-                if must_change_password is not None:
-                    admin_user.must_change_password = 'true' if must_change_password else 'false'
-                
-                # Ensure role and user_type are correct
+            
+            if admin_password is not None:
+                admin_user.password = hash_password(admin_password)
+                has_changes = True
+            
+            if must_change_password is not None:
+                new_value = 'true' if must_change_password else 'false'
+                if admin_user.must_change_password != new_value:
+                    admin_user.must_change_password = new_value
+                    has_changes = True
+            
+            # Ensure role and user_type are correct (always set these)
+            if admin_user.role != 'super_admin':
                 admin_user.role = 'super_admin'
+                has_changes = True
+            if admin_user.user_type != 'TENANT':
                 admin_user.user_type = 'TENANT'
-                admin_user.institution_id = tenant_id  # Ensure it's set correctly
-                
+                has_changes = True
+            if admin_user.institution_id != tenant_id:
+                admin_user.institution_id = tenant_id
+                has_changes = True
+            
+            # Only commit if there were actual changes
+            if has_changes:
                 user_db.commit()
                 user_db.refresh(admin_user)
-            else:
-                # No admin user exists, create one if username and password provided
-                if admin_username and admin_password:
-                    # Check if username already exists
-                    existing_username = user_db.query(User).filter(
-                        User.username == admin_username
-                    ).first()
-                    if existing_username:
-                        from app.exceptions import ConflictError
-                        raise ConflictError(f"Username '{admin_username}' already exists")
-                    
-                    # Create new admin user
-                    new_admin_user = User(
-                        institution_id=tenant_id,
-                        firstname='Admin',
-                        middlename='',
-                        lastname=tenant.name,
-                        gender='Other',
-                        address='',
-                        email=f'{admin_username}@{tenant.domain or tenant.name}',
-                        phone='',
-                        username=admin_username,
-                        password=hash_password(admin_password),
-                        role='super_admin',
-                        user_type='TENANT',
-                        is_active='active',
-                        must_change_password='true' if (must_change_password is True) else 'false'
-                    )
-                    user_db.add(new_admin_user)
-                    user_db.commit()
-                    user_db.refresh(new_admin_user)
-                elif admin_username or admin_password:
-                    # Username or password provided but not both
-                    from app.exceptions import ValidationError
-                    raise ValidationError("Both username and password are required to create a new admin user")
-        except Exception as e:
-            from app.helpers.logger import logger
-            logger.error(f"Error updating admin user for tenant {tenant.name}: {e}")
-            # Re-raise the exception
-            raise
-        finally:
-            if should_close:
-                user_db.close()
+        else:
+            # No admin user exists, create one if username and password provided
+            if admin_username and admin_password:
+                # Check if username already exists
+                existing_username = user_db.query(User).filter(
+                    User.username == admin_username
+                ).first()
+                if existing_username:
+                    raise ConflictError(f"Username '{admin_username}' already exists")
+                
+                # Create new admin user
+                new_admin_user = User(
+                    institution_id=tenant_id,
+                    firstname='Admin',
+                    middlename='',
+                    lastname=tenant.name,
+                    gender='Other',
+                    address='',
+                    email=f'{admin_username}@{tenant.domain or tenant.name}',
+                    phone='',
+                    username=admin_username,
+                    password=hash_password(admin_password),
+                    role='super_admin',
+                    user_type='TENANT',
+                    is_active='active',
+                    must_change_password='true' if (must_change_password is True) else 'false'
+                )
+                user_db.add(new_admin_user)
+                user_db.commit()
+                user_db.refresh(new_admin_user)
+            elif admin_username or admin_password:
+                # Username or password provided but not both
+                raise ValidationError("Both username and password are required to create a new admin user")
+    except (ConflictError, ValidationError):
+        # Re-raise validation/conflict errors
+        raise
+    except Exception as e:
+        from app.helpers.logger import logger
+        logger.error(f"Error updating admin user for tenant {tenant.name}: {e}")
+        raise
+    finally:
+        if should_close:
+            user_db.close()
+
+async def _upload_tenant_logo_safe(
+    tenant: Tenant,
+    tenant_id: int,
+    logo_file: UploadFile,
+    global_db: Session
+) -> None:
+    """Helper function to upload tenant logo with error handling"""
+    from app.apis.uploads import upload_tenant_logo
     
-    # Refresh tenant to get updated admin_username
-    tenant = _add_admin_username(db, tenant)
-    return tenant
+    # Determine which database to use for tenant_settings
+    mode = get_database_mode()
+    if mode == 'shared':
+        # Use shared database session
+        settings_db = get_shared_db()()
+        should_close_settings = False
+    else:
+        # Use tenant-specific database
+        TenantSessionLocal = get_tenant_db(tenant.name)
+        settings_db = TenantSessionLocal()
+        should_close_settings = True
+    
+    try:
+        # Upload logo using the existing upload function
+        # Pass global_db so it can update the tenant table
+        await upload_tenant_logo(
+            db=settings_db,
+            institution_id=tenant_id,
+            file=logo_file,
+            tenant_db=global_db  # Pass global database session for tenant table update
+        )
+    except Exception as e:
+        from app.helpers.logger import logger
+        logger.error(f"Error uploading logo for tenant {tenant_id}: {e}")
+        # Don't fail the entire update if logo upload fails
+        # The tenant update will still succeed
+    finally:
+        if should_close_settings:
+            settings_db.close()
 
 def delete_tenant(db: Session, tenant_id: int) -> bool:
     """Delete a tenant"""

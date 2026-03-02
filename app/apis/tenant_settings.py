@@ -21,6 +21,9 @@ def create_or_update_tenant_settings(
     existing = get_tenant_settings(db, institution_id)
     
     # Prepare matricule_format as JSON
+    # Check if matricule_format is provided in the request
+    has_matricule_format_in_request = settings.matricule_format is not None
+    
     matricule_format_json = None
     if settings.matricule_format:
         # Convert to dict for JSON storage
@@ -29,16 +32,20 @@ def create_or_update_tenant_settings(
     
     if existing:
         # Update existing settings
-        if settings.matricule_format:
+        if has_matricule_format_in_request:
+            # If matricule_format is provided in the request, update it and set flag to True
             existing.matricule_format = matricule_format_json
+            existing.is_matricule_format_set = True
         db.commit()
         db.refresh(existing)
         return existing
     else:
         # Create new settings
+        # Set is_matricule_format_set to True if matricule_format is provided in the request
         new_settings = TenantSettings(
             institution_id=institution_id,
-            matricule_format=matricule_format_json
+            matricule_format=matricule_format_json,
+            is_matricule_format_set=True if has_matricule_format_in_request else False
         )
         db.add(new_settings)
         db.commit()
@@ -48,7 +55,8 @@ def create_or_update_tenant_settings(
 def is_matricule_format_configured(db: Session, institution_id: int) -> bool:
     """Check if matricule format is configured for the tenant"""
     settings = get_tenant_settings(db, institution_id)
-    if not settings or not settings.matricule_format:
+    if not settings or not settings.matricule_format or not settings.is_matricule_format_set:
+        print("Matricule format is not configured. Please configure it in Tenant Settings before creating students. matricle_format: ", settings.matricule_format, " is_matricule_format_set: ", settings.is_matricule_format_set)
         return False
     
     try:

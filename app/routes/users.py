@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import Optional
-from app.schemas.users import UserRequest, UserResponse, UserUpdate, StudentPasswordAssign, ChangePasswordRequest
+from app.schemas.users import UserRequest, UserResponse, UserUpdate, StudentPasswordAssign, ChangePasswordRequest, SuspendUserRequest
 from app.apis.users import (
     create_user, get_user, get_users,
-    update_user, delete_user, assign_student_password, change_password
+    update_user, delete_user, assign_student_password, change_password, suspend_user
 )
 from app.dependencies.tenantDependency import get_db, get_db_for_admin
 from app.dependencies.auth import get_current_user_tenant, require_any_role, require_any_role_admin
@@ -85,6 +85,7 @@ def list_users(
             'user_type': getattr(user_obj, 'user_type', 'TENANT'),
             'is_active': user_obj.is_active,
             'must_change_password': getattr(user_obj, 'must_change_password', 'false'),
+            'profile_picture': getattr(user_obj, 'profile_picture', None),
             'created_at': None if (user_obj.created_at is None or 
                                    (isinstance(user_obj.created_at, datetime) and user_obj.created_at.year == 0)) 
                             else user_obj.created_at,
@@ -139,6 +140,7 @@ def list_users(
             'user_type': user.user_type,
             'is_active': user.is_active,
             'must_change_password': user.must_change_password,
+            'profile_picture': getattr(user, 'profile_picture', None),
             'created_at': None if (user.created_at is None or 
                                    (isinstance(user.created_at, datetime) and user.created_at.year == 0)) 
                             else user.created_at,
@@ -175,17 +177,16 @@ def delete_user_endpoint(
     delete_user(db=db, user_id=user_id, current_user=current_user)
     return None
 
-@user.post("/students/{student_id}/assign-password", response_model=UserResponse, status_code=201)
+@user.post("/students/assign-password", response_model=UserResponse, status_code=201)
 def assign_student_password_endpoint(
-    student_id: int,
     password_data: StudentPasswordAssign,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.STAFF, UserRole.SECRETARY))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.STAFF, UserRole.SECRETARY))
 ):
     """Assign password to a student (creates or updates user account)"""
     return assign_student_password(
         db=db,
-        student_id=student_id,
+        student_id=password_data.student_id,
         password=password_data.password,
         username=password_data.username,
         institution_id=current_user.institution_id
@@ -217,4 +218,19 @@ def change_password_endpoint(
         current_password=password_data.current_password,
         new_password=password_data.new_password,
         current_user=current_user  # Pass current_user for activity logging
+    )
+
+@user.post("/users/{user_id}/suspend", response_model=UserResponse)
+def suspend_user_endpoint(
+    user_id: int,
+    suspend_data: SuspendUserRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+):
+    """Suspend a user account"""
+    return suspend_user(
+        db=db,
+        user_id=user_id,
+        reason=suspend_data.reason,
+        current_user=current_user
     )

@@ -115,6 +115,10 @@ async def refresh_access_token(refresh_token: str):
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
         
+        # Check if user is active
+        if user.is_active != "active":
+            raise HTTPException(status_code=401, detail="User account is not active")
+        
         # Create new tokens with same user data
         data = {
             "sub": str(user.id),

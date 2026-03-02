@@ -46,28 +46,37 @@ def get_teacher_endpoint(
 def list_teachers(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
-    department_id: Optional[int] = Query(None),
+    institution_id: Optional[int] = Query(None, description="Filter by institution ID"),
+    department_id: Optional[int] = Query(None, description="Filter by department ID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
-    """Get list of teachers with pagination"""
+    """Get list of teachers with pagination, filtered by institution_id"""
     skip = (page - 1) * page_size
     
     # Determine institution_id for filtering
-    institution_id = None
-    if current_user:
+    # If provided as query parameter, use it; otherwise use current user's institution_id
+    final_institution_id = institution_id
+    if final_institution_id is None and current_user:
         is_system_admin = current_user.role and current_user.role.startswith('system_')
         if not is_system_admin:
-            institution_id = current_user.institution_id
-            if not institution_id:
+            final_institution_id = current_user.institution_id
+            if not final_institution_id:
                 from app.exceptions import ValidationError
                 raise ValidationError("User must belong to an institution to view teachers")
+    
+    # For non-system admins, ensure institution_id is set
+    if current_user:
+        is_system_admin = current_user.role and current_user.role.startswith('system_')
+        if not is_system_admin and not final_institution_id:
+            from app.exceptions import ValidationError
+            raise ValidationError("institution_id is required to fetch teachers")
     
     teachers, total = get_teachers(
         db=db,
         skip=skip,
         limit=page_size,
-        institution_id=institution_id,
+        institution_id=final_institution_id,
         department_id=department_id
     )
     return PaginatedResponse.create(

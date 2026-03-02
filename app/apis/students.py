@@ -132,6 +132,41 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
             # Don't fail the operation if activity logging fails
             print(f"Error logging student creation activity: {e}")
     
+    # Send registration email to student asynchronously (non-blocking)
+    if student.email:
+        try:
+            from app.services.email_service import EmailService
+            from app.helpers.async_helper import run_async_safe
+            from app.models.tenant import Tenant
+            
+            # Get institution name if available
+            institution_name = None
+            try:
+                from app.database.base import get_db_session
+                global_db = next(get_db_session())
+                try:
+                    tenant = global_db.query(Tenant).filter(Tenant.id == final_institution_id).first()
+                    if tenant:
+                        institution_name = tenant.name
+                finally:
+                    global_db.close()
+            except Exception:
+                pass  # If we can't get institution name, continue without it
+            
+            student_full_name = f"{student.firstname} {student.lastname}"
+            run_async_safe(
+                EmailService.send_student_registration_email(
+                    student_name=student_full_name,
+                    student_email=student.email,
+                    student_id=student.student_id,
+                    institution_name=institution_name
+                )
+            )
+        except Exception as e:
+            # Don't fail the operation if email sending fails
+            from app.helpers.logger import logger
+            logger.error(f"Error sending registration email to student {student.email}: {e}")
+    
     return new_student
 
 

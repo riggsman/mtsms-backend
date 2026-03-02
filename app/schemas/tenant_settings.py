@@ -23,6 +23,8 @@ class TenantSettingsResponse(BaseModel):
     id: int
     institution_id: int
     matricule_format: Optional[Any] = None  # Accept dict or JSON string from DB
+    is_matricule_format_set: bool = False  # Flag to indicate if matricule format is configured
+    logo: Optional[str] = None  # Path to tenant logo file
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -40,6 +42,8 @@ class TenantSettingsResponse(BaseModel):
                 'id': getattr(data, 'id', None),
                 'institution_id': getattr(data, 'institution_id', None),
                 'matricule_format': getattr(data, 'matricule_format', None),
+                'is_matricule_format_set': getattr(data, 'is_matricule_format_set', False),
+                'logo': getattr(data, 'logo', None),
                 'created_at': getattr(data, 'created_at', None),
                 'updated_at': getattr(data, 'updated_at', None)
             }

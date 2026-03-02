@@ -9,6 +9,7 @@ class Class(BaseModel_Base):
     name = Column(String(100), nullable=False)
     code = Column(String(20), nullable=False)  # Class code (e.g., "l1", "L1", "Level 1")
     institution_level = Column(String(10), nullable=False, default="HI")  # HI (Higher Institution) or SI (Secondary Institution)
+    category = Column(String(50), nullable=True)  # Category for the class
     is_custom = Column(Boolean, default=True, nullable=False)  # True for custom classes, False for default classes
     level_id = Column(Integer, nullable=True)  # Made nullable as it may not be needed with code
     department_id = Column(Integer, nullable=True)

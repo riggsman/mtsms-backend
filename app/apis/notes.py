@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from fastapi import UploadFile, HTTPException, status
 from app.models.note import Note
 from app.models.course import Course
 from app.models.teacher import Teacher
@@ -10,8 +11,10 @@ from app.exceptions import NotFoundError, ValidationError
 from app.helpers.pagination import paginate_query
 from app.helpers.activity_logger import log_create_activity, log_update_activity, log_delete_activity
 from app.helpers.file_generator import generate_pdf, generate_word
+from app.helpers.file_upload import save_uploaded_file, delete_file
 import os
 import datetime
+import re
 
 def create_note(
     db: Session,
@@ -289,4 +292,324 @@ def update_note_file_paths(
     
     db.commit()
     db.refresh(note)
+    return note
+
+
+async def create_note_with_files(
+    db: Session,
+    title: str,
+    course_id: int,
+    department_id: int,
+    lecturer_id: int,
+    institution_id: int,
+    course_code: Optional[str] = None,
+    content: Optional[str] = None,
+    pdf_file: Optional[UploadFile] = None,
+    word_file: Optional[UploadFile] = None,
+    current_user: Optional[User] = None
+) -> Note:
+    """Create a note with uploaded files"""
+    # Verify course exists
+    course = db.query(Course).filter(
+        Course.id == course_id,
+        Course.institution_id == institution_id,
+        Course.deleted_at.is_(None)
+    ).first()
+    if not course:
+        raise NotFoundError(f"Course with ID {course_id} not found")
+    
+    # Verify lecturer exists
+    lecturer = db.query(Teacher).filter(
+        Teacher.id == lecturer_id,
+        Teacher.institution_id == institution_id,
+        Teacher.deleted_at.is_(None)
+    ).first()
+    if not lecturer:
+        raise NotFoundError(f"Lecturer with ID {lecturer_id} not found")
+    
+    # Get tenant domain for file naming
+    from app.database.base import get_db_session
+    global_db = next(get_db_session())
+    try:
+        from app.models.tenant import Tenant
+        tenant = global_db.query(Tenant).filter(
+            Tenant.database_name == db.bind.url.database
+        ).first()
+        tenant_domain = tenant.domain if tenant else "default"
+    except:
+        tenant_domain = "default"
+    finally:
+        global_db.close()
+    
+    # Save uploaded files
+    pdf_path = None
+    word_path = None
+    
+    if pdf_file:
+        try:
+            # Validate PDF file
+            if pdf_file.content_type not in ['application/pdf']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="PDF file must be of type application/pdf"
+                )
+            
+            # Validate file size (10MB max)
+            if pdf_file.size and pdf_file.size > 10 * 1024 * 1024:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="PDF file size exceeds 10MB limit"
+                )
+            
+            # Use note title as filename (sanitize it)
+            sanitized_title = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', title)
+            sanitized_title = re.sub(r'_+', '_', sanitized_title).strip('_')
+            
+            file_path, relative_path = await save_uploaded_file(
+                file=pdf_file,
+                tenant_domain=tenant_domain,
+                file_category='notes',
+                subdirectory='notes',
+                custom_filename=sanitized_title
+            )
+            pdf_path = relative_path
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save PDF file: {str(e)}"
+            )
+    
+    if word_file:
+        try:
+            # Validate Word file
+            allowed_word_types = [
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            ]
+            if word_file.content_type not in allowed_word_types:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Word file must be .doc or .docx format"
+                )
+            
+            # Validate file size (10MB max)
+            if word_file.size and word_file.size > 10 * 1024 * 1024:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Word file size exceeds 10MB limit"
+                )
+            
+            # Use note title as filename (sanitize it)
+            sanitized_title = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', title)
+            sanitized_title = re.sub(r'_+', '_', sanitized_title).strip('_')
+            
+            file_path, relative_path = await save_uploaded_file(
+                file=word_file,
+                tenant_domain=tenant_domain,
+                file_category='notes',
+                subdirectory='notes',
+                custom_filename=sanitized_title
+            )
+            word_path = relative_path
+        except HTTPException:
+            raise
+        except Exception as e:
+            # Clean up PDF if it was saved
+            if pdf_path:
+                delete_file(pdf_path)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save Word file: {str(e)}"
+            )
+    
+    # Create note
+    new_note = Note(
+        institution_id=institution_id,
+        title=title,
+        course_id=course_id,
+        course_code=course_code or course.code,
+        department_id=department_id,
+        lecturer_id=lecturer_id,
+        content=content or '',
+        pdf_file_path=pdf_path,
+        word_file_path=word_path,
+        created_by=current_user.id if current_user else None
+    )
+    db.add(new_note)
+    db.commit()
+    db.refresh(new_note)
+    
+    # Log activity
+    try:
+        log_create_activity(
+            db=db,
+            current_user=current_user,
+            entity_type="note",
+            entity_id=new_note.id,
+            entity_name=title,
+            institution_id=institution_id,
+            content=f"Created note: {title} for course {course.code}"
+        )
+    except Exception as e:
+        print(f"Error logging note creation activity: {e}")
+    
+    return new_note
+
+
+async def update_note_with_files(
+    db: Session,
+    note_id: int,
+    institution_id: int,
+    title: Optional[str] = None,
+    course_id: Optional[int] = None,
+    department_id: Optional[int] = None,
+    course_code: Optional[str] = None,
+    content: Optional[str] = None,
+    pdf_file: Optional[UploadFile] = None,
+    word_file: Optional[UploadFile] = None,
+    current_user: Optional[User] = None
+) -> Note:
+    """Update a note with uploaded files"""
+    note = get_note(db, note_id, institution_id)
+    
+    # Get tenant domain for file naming
+    from app.database.base import get_db_session
+    global_db = next(get_db_session())
+    try:
+        from app.models.tenant import Tenant
+        tenant = global_db.query(Tenant).filter(
+            Tenant.database_name == db.bind.url.database
+        ).first()
+        tenant_domain = tenant.domain if tenant else "default"
+    except:
+        tenant_domain = "default"
+    finally:
+        global_db.close()
+    
+    # Update basic fields
+    if title is not None:
+        note.title = title
+    if course_id is not None:
+        # Verify course exists
+        course = db.query(Course).filter(
+            Course.id == course_id,
+            Course.institution_id == institution_id,
+            Course.deleted_at.is_(None)
+        ).first()
+        if not course:
+            raise NotFoundError(f"Course with ID {course_id} not found")
+        note.course_id = course_id
+    if department_id is not None:
+        note.department_id = department_id
+    if course_code is not None:
+        note.course_code = course_code
+    if content is not None:
+        note.content = content
+    
+    # Handle file uploads
+    if pdf_file:
+        # Delete old PDF if exists
+        if note.pdf_file_path:
+            delete_file(note.pdf_file_path)
+        
+        try:
+            # Validate PDF file
+            if pdf_file.content_type not in ['application/pdf']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="PDF file must be of type application/pdf"
+                )
+            
+            # Validate file size (10MB max)
+            if pdf_file.size and pdf_file.size > 10 * 1024 * 1024:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="PDF file size exceeds 10MB limit"
+                )
+            
+            # Use note title as filename (use current title or updated title)
+            note_title = title if title is not None else note.title
+            sanitized_title = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', note_title)
+            sanitized_title = re.sub(r'_+', '_', sanitized_title).strip('_')
+            
+            file_path, relative_path = await save_uploaded_file(
+                file=pdf_file,
+                tenant_domain=tenant_domain,
+                file_category='notes',
+                subdirectory='notes',
+                custom_filename=sanitized_title
+            )
+            note.pdf_file_path = relative_path
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save PDF file: {str(e)}"
+            )
+    
+    if word_file:
+        # Delete old Word file if exists
+        if note.word_file_path:
+            delete_file(note.word_file_path)
+        
+        try:
+            # Validate Word file
+            allowed_word_types = [
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            ]
+            if word_file.content_type not in allowed_word_types:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Word file must be .doc or .docx format"
+                )
+            
+            # Validate file size (10MB max)
+            if word_file.size and word_file.size > 10 * 1024 * 1024:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Word file size exceeds 10MB limit"
+                )
+            
+            # Use note title as filename (use current title or updated title)
+            note_title = title if title is not None else note.title
+            sanitized_title = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', note_title)
+            sanitized_title = re.sub(r'_+', '_', sanitized_title).strip('_')
+            
+            file_path, relative_path = await save_uploaded_file(
+                file=word_file,
+                tenant_domain=tenant_domain,
+                file_category='notes',
+                subdirectory='notes',
+                custom_filename=sanitized_title
+            )
+            note.word_file_path = relative_path
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save Word file: {str(e)}"
+            )
+    
+    db.commit()
+    db.refresh(note)
+    
+    # Log activity
+    try:
+        log_update_activity(
+            db=db,
+            current_user=current_user,
+            entity_type="note",
+            entity_id=note.id,
+            entity_name=note.title,
+            institution_id=institution_id,
+            content=f"Updated note: {note.title}"
+        )
+    except Exception as e:
+        print(f"Error logging note update activity: {e}")
+    
     return note

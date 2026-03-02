@@ -11,9 +11,16 @@
 
 .app-content h1 {
   color: #2e7d32;
-  font-size: 2.5rem;
+  font-size: 3rem;
+  margin-bottom: 0.75rem;
+  font-weight: 800;
+}
+
+.app-content h2 {
+  color: #388e3c;
+  font-size: 1.4rem;
   margin-bottom: 1rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .app-content p {
@@ -60,7 +67,11 @@
   }
 
   .app-content h1 {
-    font-size: 2rem;
+    font-size: 2.3rem;
+  }
+
+  .app-content h2 {
+    font-size: 1.25rem;
   }
 
   .app-content p {
@@ -74,6 +85,10 @@
   }
 
   .app-content h1 {
-    font-size: 1.75rem;
+    font-size: 2rem;
+  }
+
+  .app-content h2 {
+    font-size: 1.1rem;
   }
 }

@@ -36,19 +36,18 @@ def get_schedule_endpoint(
     """Get a schedule by ID with enriched course and instructor information"""
     return get_schedule_with_enriched_data(db=db, schedule_id=schedule_id)
 
-@schedule.get("/schedules", response_model=PaginatedResponse[ScheduleResponse])
+@schedule.get("/schedules")
 def list_schedules(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=100),
     instructor: Optional[str] = Query(None),
     day: Optional[str] = Query(None),
     course_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
-    """Get list of schedules with pagination and enriched course/instructor information"""
-    skip = (page - 1) * page_size
-    
+    """Get list of schedules with optional pagination and enriched course/instructor information.
+    If page and page_size are not provided, returns all schedules as a list."""
     # Determine institution_id for filtering
     institution_id = None
     if current_user:
@@ -59,6 +58,21 @@ def list_schedules(
                 from app.exceptions import ValidationError
                 raise ValidationError("User must belong to an institution to view schedules")
     
+    # If pagination parameters are not provided, return all schedules
+    if page is None or page_size is None:
+        schedules, _ = get_schedules_with_enriched_data(
+            db=db,
+            skip=0,
+            limit=1000000,  # Large limit to get all schedules
+            institution_id=institution_id,
+            instructor=instructor,
+            day=day,
+            course_name=course_name
+        )
+        return schedules  # Return as list when no pagination
+    
+    # Use pagination
+    skip = (page - 1) * page_size
     schedules, total = get_schedules_with_enriched_data(
         db=db,
         skip=skip,

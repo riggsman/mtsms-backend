@@ -259,6 +259,206 @@ class EmailService:
         )
     
     @staticmethod
+    async def send_student_registration_email(
+        student_name: str,
+        student_email: str,
+        student_id: str,
+        institution_name: Optional[str] = None
+    ) -> bool:
+        """Send email to student after registration"""
+        subject = f"Welcome to {settings.APP_NAME} - Student Registration Complete"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #9C27B0; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .info {{ background-color: #fff; padding: 15px; border-left: 4px solid #9C27B0; margin: 20px 0; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Welcome to {settings.APP_NAME}!</h1>
+                </div>
+                <div class="content">
+                    <p>Dear {student_name},</p>
+                    <p>Your student account has been successfully registered{f' at {institution_name}' if institution_name else ''}.</p>
+                    
+                    <div class="info">
+                        <h3>Your Registration Details:</h3>
+                        <p><strong>Student ID:</strong> {student_id}</p>
+                        <p><strong>Email:</strong> {student_email}</p>
+                        <p><strong>Name:</strong> {student_name}</p>
+                    </div>
+                    
+                    <p>Your account has been created and you can now access the student portal using your registered email address.</p>
+                    
+                    <p>If you have any questions or need assistance, please contact your institution's administration office.</p>
+                </div>
+                <div class="footer">
+                    <p>This is an automated message from {settings.APP_NAME}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text_content = f"""
+        Welcome to {settings.APP_NAME}!
+        
+        Dear {student_name},
+        
+        Your student account has been successfully registered{f' at {institution_name}' if institution_name else ''}.
+        
+        Your Registration Details:
+        Student ID: {student_id}
+        Email: {student_email}
+        Name: {student_name}
+        
+        Your account has been created and you can now access the student portal using your registered email address.
+        
+        If you have any questions or need assistance, please contact your institution's administration office.
+        
+        This is an automated message from {settings.APP_NAME}
+        """
+        
+        return await EmailService.send_email(
+            to_email=student_email,
+            subject=subject,
+            html_content=html_content,
+            text_content=text_content
+        )
+    
+    @staticmethod
+    async def send_student_password_assignment_email(
+        student_name: str,
+        student_email: str,
+        student_id: str,
+        username: str,
+        password: str,
+        must_change_password: bool = True,
+        institution_name: Optional[str] = None,
+        login_url: Optional[str] = None
+    ) -> bool:
+        """Send email to student when password is assigned"""
+        subject = f"{settings.APP_NAME} - Your Account Password Has Been Assigned"
+        
+        # Determine instructions based on must_change_password setting
+        if must_change_password:
+            password_instructions = """
+                    <div class="warning">
+                        <h3>⚠️ Important Security Notice:</h3>
+                        <p><strong>You will be required to change this password on your first login.</strong></p>
+                        <p>For your security, please log in and set a new password that only you know.</p>
+                    </div>
+            """
+            password_text_instructions = """
+IMPORTANT SECURITY NOTICE:
+You will be required to change this password on your first login.
+For your security, please log in and set a new password that only you know.
+            """
+        else:
+            password_instructions = """
+                    <div class="info">
+                        <h3>Security Reminder:</h3>
+                        <p>Please keep your password secure and do not share it with anyone.</p>
+                        <p>If you suspect your account has been compromised, please contact your administrator immediately.</p>
+                    </div>
+            """
+            password_text_instructions = """
+SECURITY REMINDER:
+Please keep your password secure and do not share it with anyone.
+If you suspect your account has been compromised, please contact your administrator immediately.
+            """
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #9C27B0; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .credentials {{ background-color: #fff; padding: 15px; border-left: 4px solid #9C27B0; margin: 20px 0; }}
+                .warning {{ background-color: #fff3cd; padding: 15px; border-left: 4px solid #FF9800; margin: 20px 0; }}
+                .info {{ background-color: #e3f2fd; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0; }}
+                .button {{ display: inline-block; padding: 12px 24px; background-color: #9C27B0; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Your Account Password Has Been Assigned</h1>
+                </div>
+                <div class="content">
+                    <p>Dear {student_name},</p>
+                    <p>Your account password has been assigned{f' for {institution_name}' if institution_name else ''}.</p>
+                    
+                    <div class="credentials">
+                        <h3>Your Login Credentials:</h3>
+                        <p><strong>Student ID:</strong> {student_id}</p>
+                        <p><strong>Username:</strong> {username}</p>
+                        <p><strong>Email:</strong> {student_email}</p>
+                        <p><strong>Password:</strong> <code style="background-color: #f5f5f5; padding: 4px 8px; border-radius: 3px; font-family: monospace;">{password}</code></p>
+                    </div>
+                    
+                    {password_instructions}
+                    
+                    {f'<p><strong>Login URL:</strong> <a href="{login_url}">{login_url}</a></p>' if login_url else ''}
+                    
+                    {f'<a href="{login_url}" class="button">Login to Your Account</a>' if login_url else ''}
+                    
+                    <p>If you have any questions or need assistance, please contact your institution's administration office.</p>
+                </div>
+                <div class="footer">
+                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p><strong>Please keep this email secure and do not share your password with anyone.</strong></p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text_content = f"""
+        Your Account Password Has Been Assigned
+        
+        Dear {student_name},
+        
+        Your account password has been assigned{f' for {institution_name}' if institution_name else ''}.
+        
+        Your Login Credentials:
+        Student ID: {student_id}
+        Username: {username}
+        Email: {student_email}
+        Password: {password}
+        
+        {password_text_instructions}
+        
+        {f'Login URL: {login_url}' if login_url else ''}
+        
+        If you have any questions or need assistance, please contact your institution's administration office.
+        
+        This is an automated message from {settings.APP_NAME}
+        
+        Please keep this email secure and do not share your password with anyone.
+        """
+        
+        return await EmailService.send_email(
+            to_email=student_email,
+            subject=subject,
+            html_content=html_content,
+            text_content=text_content
+        )
+    
+    @staticmethod
     async def send_password_change_email(
         user_name: str,
         user_email: str,
@@ -324,6 +524,94 @@ class EmailService:
         
         return await EmailService.send_email(
             to_email=user_email,
+            subject=subject,
+            html_content=html_content,
+            text_content=text_content
+        )
+    
+    @staticmethod
+    async def send_student_suspension_email(
+        student_name: str,
+        student_email: str,
+        student_id: str,
+        reason: str,
+        institution_name: Optional[str] = None,
+        login_url: Optional[str] = None
+    ) -> bool:
+        """Send email to student informing them of their account suspension"""
+        subject = f"{settings.APP_NAME} - Account Suspension Notice"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #dc3545; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .warning {{ background-color: #fff3cd; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0; }}
+                .reason-box {{ background-color: #fff; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Account Suspension Notice</h1>
+                </div>
+                <div class="content">
+                    <p>Dear {student_name},</p>
+                    <p>We regret to inform you that your account{f' at {institution_name}' if institution_name else ''} has been suspended.</p>
+                    
+                    <div class="warning">
+                        <h3>⚠️ Important Notice</h3>
+                        <p>Your account access has been temporarily restricted. You will not be able to log in until further notice.</p>
+                    </div>
+                    
+                    <div class="reason-box">
+                        <h3>Reason for Suspension:</h3>
+                        <p><strong>{reason}</strong></p>
+                    </div>
+                    
+                    <p>If you believe this suspension is in error or have questions about this action, please contact your institution's administration office immediately.</p>
+                    
+                    {f'<p>You can reach out to us at: <a href="{login_url}">{login_url}</a></p>' if login_url else ''}
+                    
+                    <p>We encourage you to address any concerns promptly to resolve this matter.</p>
+                </div>
+                <div class="footer">
+                    <p>This is an automated message from {settings.APP_NAME}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text_content = f"""
+        Account Suspension Notice
+        
+        Dear {student_name},
+        
+        We regret to inform you that your account{f' at {institution_name}' if institution_name else ''} has been suspended.
+        
+        Important Notice:
+        Your account access has been temporarily restricted. You will not be able to log in until further notice.
+        
+        Reason for Suspension:
+        {reason}
+        
+        If you believe this suspension is in error or have questions about this action, please contact your institution's administration office immediately.
+        
+        {f'You can reach out to us at: {login_url}' if login_url else ''}
+        
+        We encourage you to address any concerns promptly to resolve this matter.
+        
+        This is an automated message from {settings.APP_NAME}
+        """
+        
+        return await EmailService.send_email(
+            to_email=student_email,
             subject=subject,
             html_content=html_content,
             text_content=text_content

@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from typing import Optional
+import json
 from app.database.base import get_db_session
 from app.database.sessionManager import get_database_mode, set_database_mode
 from app.models.system_config import SystemConfig
@@ -7,11 +9,13 @@ from app.schemas.system_config import (
     DatabaseModeResponse,
     DatabaseModeUpdate,
     SystemConfigResponse,
-    SystemConfigUpdate
+    SystemConfigUpdate,
+    NotificationAdminEmailsConfig,
 )
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_any_role_admin
 from app.models.user import User
 from app.models.role import UserRole
+from app.conf.config import settings
 
 system_config = APIRouter()
 
@@ -142,3 +146,132 @@ def update_system_config(
     db.refresh(config)
     
     return config
+
+
+def _get_notification_admin_emails_from_env() -> NotificationAdminEmailsConfig:
+    """
+    Build notification admin emails config from environment variable
+    as a fallback when not configured in the database.
+    """
+    emails = settings.system_admin_notification_emails
+    return NotificationAdminEmailsConfig(
+        emails=[
+            # enabled by default when coming from env
+            # validation of email format is handled by NotificationAdminEmail
+            {"email": email, "enabled": True}
+            for email in emails
+        ]
+    )
+
+
+def _get_notification_admin_config_from_db(
+    db: Session,
+) -> Optional[NotificationAdminEmailsConfig]:
+    config = db.query(SystemConfig).filter(
+        SystemConfig.key == "notification_admin_emails"
+    ).first()
+    if not config or not config.value:
+        return None
+
+    try:
+        raw = json.loads(config.value)
+        return NotificationAdminEmailsConfig.model_validate(raw)
+    except Exception:
+        # If stored JSON is invalid, ignore and fall back to env
+        return None
+
+
+@system_config.get(
+    "/notification-admin-emails",
+    response_model=NotificationAdminEmailsConfig,
+    tags=["System Config"],
+)
+def get_notification_admin_emails(
+    current_user: User = Depends(
+        require_any_role_admin(
+            UserRole.ADMIN,
+            UserRole.STAFF,
+            UserRole.SUPER_ADMIN,
+            UserRole.SECRETARY,
+        )
+    ),
+    db: Session = Depends(get_db_session),
+):
+    """
+    Get system admin notification emails.
+
+    - Returns DB configuration if present and valid.
+    - Otherwise falls back to `.env` variable `SYSTEM_ADMIN_NOTIFICATION_EMAILS`.
+    - Maximum of 3 emails, each with an `enabled` flag.
+    """
+    config = _get_notification_admin_config_from_db(db)
+    if config:
+        return config
+
+    # Fallback to environment configuration
+    return _get_notification_admin_emails_from_env()
+
+
+@system_config.put(
+    "/notification-admin-emails",
+    response_model=NotificationAdminEmailsConfig,
+    tags=["System Config"],
+)
+def update_notification_admin_emails(
+    payload: NotificationAdminEmailsConfig,
+    current_user: User = Depends(
+        require_any_role_admin(
+            UserRole.ADMIN,
+            UserRole.STAFF,
+            UserRole.SUPER_ADMIN,
+            UserRole.SECRETARY,
+        )
+    ),
+    db: Session = Depends(get_db_session),
+):
+    """
+    Update system admin notification emails.
+
+    - Allows configuring up to 3 emails.
+    - Each email can be marked `enabled` to receive notifications.
+    """
+    # Payload validator already enforces max 3 and email format.
+    # Persist as JSON in SystemConfig.
+    try:
+        config = db.query(SystemConfig).filter(
+            SystemConfig.key == "notification_admin_emails"
+        ).first()
+
+        if not config:
+            config = SystemConfig(
+                key="notification_admin_emails",
+                description=(
+                    "List of system admin emails (max 3) that can receive system notifications. "
+                    "Each email has an enabled flag."
+                ),
+            )
+            db.add(config)
+
+        # Serialize payload to JSON string
+        import json
+        config.value = json.dumps(payload.model_dump(), ensure_ascii=False)
+        
+        db.commit()
+        db.refresh(config)
+        
+        # Verify the save by reading it back
+        db.refresh(config)
+        if not config.value:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save notification admin emails configuration"
+            )
+            
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save notification admin emails: {str(e)}"
+        )
+
+    return payload

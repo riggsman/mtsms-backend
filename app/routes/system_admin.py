@@ -11,6 +11,9 @@ from fastapi import HTTPException, status
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_
 
+from app.routes.system_settings import _get_or_create_singleton
+from app.schemas.system_settings import FirebaseMessagingConfig, SystemSettingsRequest
+
 system_admin = APIRouter()
 
 def check_system_admin(current_user: User):
@@ -179,44 +182,129 @@ async def get_system_settings(
 
 @system_admin.put("/system/settings")
 async def update_system_settings(
-    settings: dict,
+    payload: SystemSettingsRequest,
+    # settings: dict,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session)
 ):
     """Update system settings"""
     check_system_admin(current_user)
     
-    # Map frontend keys to config keys
-    key_mapping = {
-        'maintenanceMode': 'maintenance_mode',
-        'allowNewRegistrations': 'allow_new_registrations',
-        'maxTenants': 'max_tenants',
-        'sessionTimeout': 'session_timeout',
-        'emailNotifications': 'email_notifications'
-    }
+    # # Map frontend keys to config keys
+    # key_mapping = {
+    #     'maintenanceMode': 'maintenance_mode',
+    #     'allowNewRegistrations': 'allow_new_registrations',
+    #     'maxTenants': 'max_tenants',
+    #     'sessionTimeout': 'session_timeout',
+    #     'emailNotifications': 'email_notifications'
+    # }
     
-    for frontend_key, value in settings.items():
-        if frontend_key in key_mapping:
-            config_key = key_mapping[frontend_key]
+    # for frontend_key, value in settings.items():
+    #     if frontend_key in key_mapping:
+    #         config_key = key_mapping[frontend_key]
             
-            # Get or create config
-            config = db.query(SystemConfig).filter(SystemConfig.key == config_key).first()
+    #         # Get or create config
+    #         config = db.query(SystemConfig).filter(SystemConfig.key == config_key).first()
             
-            if config:
-                # Convert boolean to string
-                if isinstance(value, bool):
-                    config.value = 'true' if value else 'false'
-                else:
-                    config.value = str(value)
-            else:
-                # Create new config
-                config = SystemConfig(
-                    key=config_key,
-                    value='true' if isinstance(value, bool) and value else str(value),
-                    description=f"System setting for {config_key}"
-                )
-                db.add(config)
+    #         if config:
+    #             # Convert boolean to string
+    #             if isinstance(value, bool):
+    #                 config.value = 'true' if value else 'false'
+    #             else:
+    #                 config.value = str(value)
+    #         else:
+    #             # Create new config
+    #             config = SystemConfig(
+    #                 key=config_key,
+    #                 value='true' if isinstance(value, bool) and value else str(value),
+    #                 description=f"System setting for {config_key}"
+    #             )
+    #             db.add(config)
     
-    db.commit()
+    # db.commit()
+    """
+    Update global system settings from the admin UI.
+    Only fields provided in the payload are updated (partial update).
+    """
+    # Check if user is system admin or system super admin
+    if (current_user.role != UserRole.SYSTEM_ADMIN.value and 
+        current_user.role != UserRole.SYSTEM_SUPER_ADMIN.value and
+        not (current_user.role and current_user.role.startswith('system_'))):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admin or system super admin can update system settings"
+        )
+
+    settings = _get_or_create_singleton(db)
+
+    # Map camelCase payload fields to snake_case model attributes
+    if payload.maintenanceMode is not None:
+        settings.maintenance_mode = payload.maintenanceMode
+    if payload.allowNewRegistrations is not None:
+        settings.allow_new_registrations = payload.allowNewRegistrations
+    if payload.maxTenants is not None:
+        settings.max_tenants = payload.maxTenants
+    if payload.sessionTimeout is not None:
+        settings.session_timeout = payload.sessionTimeout
+    if payload.emailNotifications is not None:
+        settings.email_notifications = payload.emailNotifications
+
+    if payload.firebaseMessaging is not None:
+        # Update individual Firebase config columns
+        fm = payload.firebaseMessaging
+        if fm.enabled is not None:
+            settings.firebase_messaging_enabled = fm.enabled
+        if fm.apiKey is not None:
+            settings.firebase_api_key = fm.apiKey
+        if fm.authDomain is not None:
+            settings.firebase_auth_domain = fm.authDomain
+        if fm.projectId is not None:
+            settings.firebase_project_id = fm.projectId
+        if fm.messagingSenderId is not None:
+            settings.firebase_messaging_sender_id = fm.messagingSenderId
+        if fm.appId is not None:
+            settings.firebase_app_id = fm.appId
+        if fm.vapidKey is not None:
+            settings.firebase_vapid_key = fm.vapidKey
+
+    # Since settings was retrieved from DB, it's already tracked - no need for db.add()
+    # Just commit the changes
+    try:
+        db.add(settings)  # Optional, can be omitted since settings is already in the session
+        db.commit()
+        db.refresh(settings)
+        
+        # Verify the save by checking if updated_at changed
+        if settings.updated_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save system settings: updated_at was not set"
+            )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save system settings: {str(e)}"
+        )
+
+    # Build Firebase config from individual columns for response
+    firebase_cfg: Optional[FirebaseMessagingConfig] = None
+    if settings.firebase_messaging_enabled or any([
+        settings.firebase_api_key,
+        settings.firebase_auth_domain,
+        settings.firebase_project_id,
+        settings.firebase_messaging_sender_id,
+        settings.firebase_app_id,
+        settings.firebase_vapid_key,
+    ]):
+        firebase_cfg = FirebaseMessagingConfig(
+            enabled=settings.firebase_messaging_enabled,
+            apiKey=settings.firebase_api_key,
+            authDomain=settings.firebase_auth_domain,
+            projectId=settings.firebase_project_id,
+            messagingSenderId=settings.firebase_messaging_sender_id,
+            appId=settings.firebase_app_id,
+            vapidKey=settings.firebase_vapid_key,
+        )
     
     return {"message": "Settings updated successfully"}

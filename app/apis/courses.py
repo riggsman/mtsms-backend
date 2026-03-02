@@ -1,6 +1,7 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from app.models.course import Course
+from app.models.department import Department
 from app.models.user import User
 from app.schemas.courses import CourseRequest, CourseResponse, CourseUpdate
 from app.exceptions import NotFoundError, ConflictError
@@ -33,6 +34,19 @@ def create_course(db: Session, course: CourseRequest, institution_id: Optional[i
     db.commit()
     db.refresh(new_course)
     
+    # Add department_name to the new course
+    if new_course.department_id:
+        department = db.query(Department).filter(
+            Department.id == new_course.department_id,
+            Department.deleted_at.is_(None)
+        ).first()
+        if department:
+            new_course.department_name = department.name
+        else:
+            new_course.department_name = None
+    else:
+        new_course.department_name = None
+    
     # Log activity if current_user is provided
     if current_user:
         try:
@@ -60,6 +74,20 @@ def get_course(db: Session, course_id: int) -> Course:
     ).first()
     if not course:
         raise NotFoundError(f"Course with ID {course_id} not found")
+    
+    # Add department_name to the course object
+    if course.department_id:
+        department = db.query(Department).filter(
+            Department.id == course.department_id,
+            Department.deleted_at.is_(None)
+        ).first()
+        if department:
+            course.department_name = department.name
+        else:
+            course.department_name = None
+    else:
+        course.department_name = None
+    
     return course
 
 
@@ -86,7 +114,27 @@ def get_courses(
     if level_id:
         query = query.filter(Course.level_id == level_id)
     
-    return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
+    courses, total = paginate_query(query, page=(skip // limit) + 1, page_size=limit)
+    
+    # Add department_name to each course
+    department_ids = [course.department_id for course in courses if course.department_id]
+    if department_ids:
+        departments = db.query(Department).filter(
+            Department.id.in_(department_ids),
+            Department.deleted_at.is_(None)
+        ).all()
+        department_map = {dept.id: dept.name for dept in departments}
+        
+        for course in courses:
+            if course.department_id:
+                course.department_name = department_map.get(course.department_id)
+            else:
+                course.department_name = None
+    else:
+        for course in courses:
+            course.department_name = None
+    
+    return courses, total
 
 
 def update_course(db: Session, course_id: int, course_update: CourseUpdate, current_user: Optional[User] = None) -> Course:
@@ -109,6 +157,19 @@ def update_course(db: Session, course_id: int, course_update: CourseUpdate, curr
     
     db.commit()
     db.refresh(course)
+    
+    # Add department_name to the updated course
+    if course.department_id:
+        department = db.query(Department).filter(
+            Department.id == course.department_id,
+            Department.deleted_at.is_(None)
+        ).first()
+        if department:
+            course.department_name = department.name
+        else:
+            course.department_name = None
+    else:
+        course.department_name = None
     
     # Log activity if current_user is provided
     if current_user:

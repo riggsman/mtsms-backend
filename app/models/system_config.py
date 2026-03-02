@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, DateTime
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text
 from app.database.base import DefaultBase
 import datetime
 
@@ -11,7 +11,7 @@ class SystemConfig(DefaultBase):
     
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String(100), unique=True, nullable=False, index=True)
-    value = Column(String(500), nullable=True)
+    value = Column(Text, nullable=True)  # Changed from String(500) to Text to support longer JSON
     description = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=True)

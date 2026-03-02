@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
+import logging
 from app.models.user import User
 from app.exceptions import NotFoundError, ConflictError
 from app.helpers.pagination import paginate_query
@@ -11,6 +12,8 @@ from app.apis.activity import log_activity
 from app.services.email_service import EmailService
 from app.helpers.async_helper import run_async_safe
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = None) -> User:
     """
@@ -239,6 +242,48 @@ def assign_student_password(db: Session, student_id: int, password: str, usernam
             existing_user.username = username
         db.commit()
         db.refresh(existing_user)
+        
+        # Send password assignment email asynchronously (non-blocking)
+        try:
+            from app.helpers.async_helper import run_async_safe
+            # Get tenant/institution name and login URL from tenant domain
+            institution_name = None
+            login_url = None
+            try:
+                from app.database.base import get_db_session
+                global_db = next(get_db_session())
+                try:
+                    from app.models.tenant import Tenant
+                    tenant = global_db.query(Tenant).filter(
+                        Tenant.database_name == db.bind.url.database
+                    ).first()
+                    if tenant:
+                        institution_name = tenant.name  # Use tenant name as institution name
+                        if tenant.domain:
+                            login_url = f"https://{tenant.domain}"
+                except Exception as tenant_error:
+                    logger.warning(f"Error getting tenant info: {tenant_error}")
+                finally:
+                    global_db.close()
+            except Exception as db_error:
+                logger.warning(f"Error accessing global database: {db_error}")
+            
+            run_async_safe(
+                EmailService.send_student_password_assignment_email(
+                    student_name=f"{student.firstname} {student.lastname}".strip(),
+                    student_email=student.email,
+                    student_id=student.student_id or str(student.id),
+                    username=existing_user.username,
+                    password=password,  # Send plain password in email
+                    must_change_password=True,
+                    institution_name=institution_name,
+                    login_url=login_url
+                )
+            )
+        except Exception as e:
+            # Don't fail password assignment if email sending fails
+            logger.error(f"Error sending password assignment email to student {student.email}: {e}")
+        
         return existing_user
     else:
         # Create new user account for student
@@ -273,6 +318,48 @@ def assign_student_password(db: Session, student_id: int, password: str, usernam
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
+        
+        # Send password assignment email asynchronously (non-blocking)
+        try:
+            from app.helpers.async_helper import run_async_safe
+            # Get tenant/institution name and login URL from tenant domain
+            institution_name = None
+            login_url = None
+            try:
+                from app.database.base import get_db_session
+                global_db = next(get_db_session())
+                try:
+                    from app.models.tenant import Tenant
+                    tenant = global_db.query(Tenant).filter(
+                        Tenant.database_name == db.bind.url.database
+                    ).first()
+                    if tenant:
+                        institution_name = tenant.name  # Use tenant name as institution name
+                        if tenant.domain:
+                            login_url = f"https://{tenant.domain}"
+                except Exception as tenant_error:
+                    logger.warning(f"Error getting tenant info: {tenant_error}")
+                finally:
+                    global_db.close()
+            except Exception as db_error:
+                logger.warning(f"Error accessing global database: {db_error}")
+            
+            run_async_safe(
+                EmailService.send_student_password_assignment_email(
+                    student_name=f"{student.firstname} {student.lastname}".strip(),
+                    student_email=student.email,
+                    student_id=student.student_id or str(student.id),
+                    username=new_user.username,
+                    password=password,  # Send plain password in email
+                    must_change_password=True,
+                    institution_name=institution_name,
+                    login_url=login_url
+                )
+            )
+        except Exception as e:
+            # Don't fail password assignment if email sending fails
+            logger.error(f"Error sending password assignment email to student {student.email}: {e}")
+        
         return new_user
 
 def change_password(db: Session, user_id: int, current_password: str, new_password: str, current_user: Optional[User] = None) -> User:
@@ -379,5 +466,90 @@ def change_password(db: Session, user_id: int, current_password: str, new_passwo
         except Exception as e:
             # Don't fail password change if email sending fails
             print(f"Error sending password change email: {e}")
+    
+    return user
+
+def suspend_user(db: Session, user_id: int, reason: str, current_user: Optional[User] = None) -> User:
+    """Suspend a user account"""
+    from app.models.student import Student
+    
+    # Get user by ID
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise NotFoundError(f"User with ID {user_id} not found")
+    
+    # Check if user is already suspended
+    if user.is_active == "suspended":
+        from app.exceptions import ValidationError
+        raise ValidationError("User is already suspended")
+    
+    # Update user status to suspended
+    user.is_active = "suspended"
+    db.commit()
+    db.refresh(user)
+    
+    # Log activity
+    try:
+        log_update_activity(
+            db=db,
+            user_id=current_user.id if current_user else None,
+            entity_type="user",
+            entity_id=user_id,
+            changes={"is_active": "suspended", "suspension_reason": reason},
+            institution_id=current_user.institution_id if current_user else None
+        )
+    except Exception as e:
+        # Don't fail the operation if activity logging fails
+        pass
+    
+    # Send suspension email asynchronously
+    try:
+        from app.helpers.async_helper import run_async_safe
+        # Get tenant/institution name and login URL from tenant domain
+        institution_name = None
+        login_url = None
+        try:
+            from app.database.base import get_db_session
+            global_db = next(get_db_session())
+            try:
+                from app.models.tenant import Tenant
+                tenant = global_db.query(Tenant).filter(
+                    Tenant.database_name == db.bind.url.database
+                ).first()
+                if tenant:
+                    institution_name = tenant.name
+                    if tenant.domain:
+                        login_url = f"https://{tenant.domain}"
+            except Exception as tenant_error:
+                logger.warning(f"Error getting tenant info: {tenant_error}")
+            finally:
+                global_db.close()
+        except Exception as db_error:
+            logger.warning(f"Error accessing global database: {db_error}")
+        
+        # Get student info if user is a student
+        student = None
+        if user.role == "student":
+            student = db.query(Student).filter(Student.email == user.email).first()
+        
+        student_name = None
+        if student:
+            student_name = f"{student.firstname} {student.lastname}".strip()
+        else:
+            student_name = f"{user.firstname} {user.lastname}".strip()
+        
+        run_async_safe(
+            EmailService.send_student_suspension_email(
+                student_name=student_name,
+                student_email=user.email,
+                student_id=student.student_id if student else str(user.id),
+                reason=reason,
+                institution_name=institution_name,
+                login_url=login_url
+            )
+        )
+    except Exception as e:
+        # Don't fail suspension if email sending fails
+        logger.error(f"Error sending suspension email to user {user.email}: {e}")
     
     return user

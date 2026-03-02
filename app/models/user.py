@@ -19,6 +19,7 @@ class User(BaseModel_Base):
     user_type = Column(String(20), default="TENANT", nullable=False)  # TENANT or SYSTEM - indicates if user was created by tenant admin or system admin
     is_active = Column(String(10), default="active", nullable=False)  # active, inactive, suspended
     must_change_password = Column(String(10), default="false", nullable=False)  # true, false - indicates if user must change password on first login
+    profile_picture = Column(String(500), nullable=True)  # Path to profile picture file
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=True)
     deleted_at = Column(DateTime, nullable=True)  # Soft delete

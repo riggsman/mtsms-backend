@@ -32,6 +32,7 @@ class UserResponse(BaseModel):
     user_type: str
     is_active: str
     must_change_password: Optional[str] = "false"
+    profile_picture: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -127,3 +128,6 @@ class StudentPasswordAssign(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+class SuspendUserRequest(BaseModel):
+    reason: str  # Required reason for suspension

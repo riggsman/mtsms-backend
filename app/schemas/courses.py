@@ -19,6 +19,7 @@ class CourseResponse(BaseModel):
     code: str
     description: Optional[str]
     department_id: int
+    department_name: Optional[str] = None  # Department name from departments table
     level_id: Optional[int]
     credits: Optional[Decimal]
     created_at: datetime

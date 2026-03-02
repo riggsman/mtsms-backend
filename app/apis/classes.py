@@ -15,10 +15,19 @@ def create_class(db: Session, class_data: ClassRequest, institution_id: Optional
         from app.exceptions import ValidationError
         raise ValidationError("institution_id is required to create a class")
     
+    # Map category to institution_level if category is provided but institution_level is not
+    # Category (HI/SI) should map to institution_level
+    if class_data.category and not class_data.institution_level:
+        class_data.institution_level = class_data.category
+    
     # Validate institution_level
     if class_data.institution_level not in ["HI", "SI"]:
         from app.exceptions import ValidationError
         raise ValidationError("institution_level must be 'HI' (Higher Institution) or 'SI' (Secondary Institution)")
+    
+    # Also set category from institution_level if category is not provided
+    if not class_data.category:
+        class_data.category = class_data.institution_level
     
     # Check if class code already exists for this institution
     existing = db.query(Class).filter(
@@ -38,6 +47,9 @@ def create_class(db: Session, class_data: ClassRequest, institution_id: Optional
     db.commit()
     db.refresh(new_class)
     
+    # Enrich with level information
+    new_class = _enrich_class_with_level(db, new_class)
+    
     # Log activity if current_user is provided
     if current_user:
         try:
@@ -56,6 +68,48 @@ def create_class(db: Session, class_data: ClassRequest, institution_id: Optional
     
     return new_class
 
+def _enrich_class_with_level(db: Session, class_obj: Class) -> Class:
+    """Helper function to add level information to class object"""
+    if class_obj.level_id:
+        try:
+            # Try to get level from levels table if it exists
+            from sqlalchemy import inspect, text
+            inspector = inspect(db.bind)
+            tables = inspector.get_table_names()
+            
+            if 'levels' in tables:
+                # Query level information - handle both string and integer IDs
+                try:
+                    level_result = db.execute(
+                        text("SELECT level, code FROM levels WHERE id = :level_id"),
+                        {"level_id": class_obj.level_id}
+                    ).first()
+                except:
+                    # Try with string ID if integer fails
+                    level_result = db.execute(
+                        text("SELECT level, code FROM levels WHERE id = :level_id"),
+                        {"level_id": str(class_obj.level_id)}
+                    ).first()
+                
+                if level_result:
+                    setattr(class_obj, 'level', level_result[0])  # level name
+                    setattr(class_obj, 'level_code', level_result[1])  # level code
+                else:
+                    setattr(class_obj, 'level', None)
+                    setattr(class_obj, 'level_code', None)
+            else:
+                setattr(class_obj, 'level', None)
+                setattr(class_obj, 'level_code', None)
+        except Exception as e:
+            # If level lookup fails, just set to None
+            setattr(class_obj, 'level', None)
+            setattr(class_obj, 'level_code', None)
+    else:
+        setattr(class_obj, 'level', None)
+        setattr(class_obj, 'level_code', None)
+    
+    return class_obj
+
 def get_class(db: Session, class_id: int) -> Class:
     """Get a class by ID"""
     class_obj = db.query(Class).filter(
@@ -64,6 +118,9 @@ def get_class(db: Session, class_id: int) -> Class:
     ).first()
     if not class_obj:
         raise NotFoundError(f"Class with ID {class_id} not found")
+    
+    # Enrich with level information
+    class_obj = _enrich_class_with_level(db, class_obj)
     return class_obj
 
 def get_default_classes(institution_level: str = "HI") -> List[dict]:
@@ -111,6 +168,7 @@ def get_classes(
         query = query.filter(Class.institution_id == institution_id)
     
     if institution_level:
+        # Filter by institution_level (which corresponds to category HI/SI)
         query = query.filter(Class.institution_level == institution_level)
     
     if department_id:
@@ -119,9 +177,18 @@ def get_classes(
     # Get custom classes
     custom_classes, custom_total = paginate_query(query, page=(skip // limit) + 1, page_size=limit)
     
+    # Enrich classes with level information and ensure category is set
+    enriched_classes = []
+    for class_obj in custom_classes:
+        enriched_class = _enrich_class_with_level(db, class_obj)
+        # Ensure category is set from institution_level if not already set
+        if not enriched_class.category and enriched_class.institution_level:
+            enriched_class.category = enriched_class.institution_level
+        enriched_classes.append(enriched_class)
+    
     # If we have custom classes, return them
-    if custom_classes and len(custom_classes) > 0:
-        return custom_classes, custom_total
+    if enriched_classes and len(enriched_classes) > 0:
+        return enriched_classes, custom_total
     
     # If no custom classes exist, return default classes as fallback
     # Convert default classes to Class-like objects for consistency
@@ -145,10 +212,13 @@ def get_classes(
             'id': -(idx + 1),  # Negative ID to indicate it's a default class
             'institution_id': institution_id if institution_id is not None else 0,  # Use actual institution_id for tenant isolation
             'name': default_def["name"],
-            'code': default_def["code"],
+            'code': default_def["code"],  # Code displayed in code section
             'institution_level': default_def["institution_level"],
+            'category': default_def["institution_level"],  # Set category from institution_level
             'is_custom': False,
             'level_id': None,
+            'level': None,  # Level name displayed in level section
+            'level_code': None,  # Level code if available
             'department_id': None,
             'academic_year_id': None,
             'capacity': None,
@@ -192,6 +262,9 @@ def update_class(db: Session, class_id: int, class_update: ClassUpdate, current_
     
     db.commit()
     db.refresh(class_obj)
+    
+    # Enrich with level information
+    class_obj = _enrich_class_with_level(db, class_obj)
     
     # Log activity if current_user is provided
     if current_user:

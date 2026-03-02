@@ -9,6 +9,8 @@ class UserRole(str, Enum):
     STAFF = "staff"
     SUPER_ADMIN = "super_admin"
     SECRETARY = "secretary"
+    SYSTEM_ADMIN = "system_admin"
+    SYSTEM_SUPER_ADMIN = "system_super_admin"
     
     @classmethod
     def has_value(cls, value: str) -> bool:
