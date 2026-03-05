@@ -105,7 +105,7 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
     student_dict = student.dict(exclude={
         'guardian_name', 'guardian_phone', 'guardian_address', 
         'guardian_relationship', 'guardian_gender', 'guardian_email', 'guardian_occupation',
-        'institution_id'  # Exclude if present, we'll set it explicitly
+        'institution_id','photo'  # Exclude if present, we'll set it explicitly
     })
     student_dict['institution_id'] = final_institution_id
     student_dict['guardian_id'] = guardian_id
@@ -114,6 +114,8 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
     db.add(new_student)
     db.commit()
     db.refresh(new_student)
+
+    new_student.photo = student.photo
     
     # Log activity if current_user is provided
     if current_user:
@@ -170,12 +172,19 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
     return new_student
 
 
-def get_student(db: Session, student_id: int) -> Student:
-    """Get a student by ID"""
-    student = db.query(Student).filter(
-        Student.id == student_id,
-        Student.deleted_at.is_(None)
+def get_student(db: Session, student_id: int, institution_id: Optional[int] = None) -> Student:
+    """Get a student by ID (tenant-scoped if institution_id is provided)"""
+    userQuery = db.query(User).filter(
+        User.id == student_id,
+        User.deleted_at.is_(None)
     ).first()
+    query = db.query(Student).filter(
+        Student.institution_id == userQuery.institution_id,
+        Student.deleted_at.is_(None)
+    )
+    if institution_id is not None:
+        query = query.filter(Student.institution_id == institution_id)
+    student = query.first()
     if not student:
         raise NotFoundError(f"Student with ID {student_id} not found")
     return student

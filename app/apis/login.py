@@ -71,7 +71,8 @@ async def new_login(loginRequest: LoginRequest, db: Session, tenant_name: str = 
             tenantName=final_tenant_name,
             domain=final_domain,
             institution_id=user.institution_id,
-            mustChangePassword=getattr(user, 'must_change_password', 'false') == "true"
+            mustChangePassword=getattr(user, 'must_change_password', 'false') == "true",
+            language=getattr(user, 'language', 'en') or 'en'
         )
         
         return LoginResponse(

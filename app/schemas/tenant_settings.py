@@ -18,6 +18,7 @@ class MatriculeFormatConfig(BaseModel):
 
 class TenantSettingsRequest(BaseModel):
     matricule_format: Optional[MatriculeFormatConfig] = None
+    email_reminder_time: Optional[int] = None  # Minutes before class to send reminder
 
 class TenantSettingsResponse(BaseModel):
     id: int
@@ -25,6 +26,7 @@ class TenantSettingsResponse(BaseModel):
     matricule_format: Optional[Any] = None  # Accept dict or JSON string from DB
     is_matricule_format_set: bool = False  # Flag to indicate if matricule format is configured
     logo: Optional[str] = None  # Path to tenant logo file
+    email_reminder_time: Optional[int] = 30  # Minutes before class to send reminder (default: 30)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -44,6 +46,7 @@ class TenantSettingsResponse(BaseModel):
                 'matricule_format': getattr(data, 'matricule_format', None),
                 'is_matricule_format_set': getattr(data, 'is_matricule_format_set', False),
                 'logo': getattr(data, 'logo', None),
+                'email_reminder_time': getattr(data, 'email_reminder_time', 30),
                 'created_at': getattr(data, 'created_at', None),
                 'updated_at': getattr(data, 'updated_at', None)
             }
@@ -58,5 +61,9 @@ class TenantSettingsResponse(BaseModel):
                 except (json.JSONDecodeError, TypeError):
                     # If parsing fails, set to None
                     data['matricule_format'] = None
+            
+            # Ensure email_reminder_time has a default value if None
+            if data.get('email_reminder_time') is None:
+                data['email_reminder_time'] = 30
         
         return data

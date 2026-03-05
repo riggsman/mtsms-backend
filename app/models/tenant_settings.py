@@ -9,5 +9,6 @@ class TenantSettings(BaseModel_Base):
     matricule_format = Column(JSON, nullable=True)  # Store format configuration as JSON
     is_matricule_format_set = Column(Boolean, default=False, nullable=False)  # Flag to indicate if matricule format is configured
     logo = Column(String(500), nullable=True)  # Path to tenant logo file
+    email_reminder_time = Column(Integer, nullable=True, default=30)  # Minutes before class to send reminder (default: 30)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=True)

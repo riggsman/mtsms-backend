@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.schemas.users import UserRequest, UserResponse, UserUpdate, StudentPasswordAssign, ChangePasswordRequest, SuspendUserRequest
+from pydantic import BaseModel
+from fastapi import HTTPException, status
 from app.apis.users import (
     create_user, get_user, get_users,
     update_user, delete_user, assign_student_password, change_password, suspend_user, suspend_user_by_student_id
@@ -86,6 +88,7 @@ def list_users(
             'is_active': user_obj.is_active,
             'must_change_password': getattr(user_obj, 'must_change_password', 'false'),
             'profile_picture': getattr(user_obj, 'profile_picture', None),
+            'language': getattr(user_obj, 'language', 'en') or 'en',
             'created_at': None if (user_obj.created_at is None or 
                                    (isinstance(user_obj.created_at, datetime) and user_obj.created_at.year == 0)) 
                             else user_obj.created_at,
@@ -141,6 +144,7 @@ def list_users(
             'is_active': user.is_active,
             'must_change_password': user.must_change_password,
             'profile_picture': getattr(user, 'profile_picture', None),
+            'language': getattr(user, 'language', 'en') or 'en',
             'created_at': None if (user.created_at is None or 
                                    (isinstance(user.created_at, datetime) and user.created_at.year == 0)) 
                             else user.created_at,
@@ -249,3 +253,56 @@ def suspend_student_endpoint(
         reason=suspend_data.reason,
         current_user=current_user
     )
+
+class UpdateLanguageRequest(BaseModel):
+    language: str
+
+@user.patch("/users/me/language", response_model=UserResponse)
+def update_my_language(
+    payload: UpdateLanguageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant)
+):
+    """Update current user's preferred language"""
+    lang = payload.language.lower().strip()
+    
+    # Validate language (only allow 'en' and 'fr' for now)
+    if lang not in {"en", "fr"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported language. Supported languages: en, fr"
+        )
+    
+    # Update user's language
+    current_user.language = lang
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    
+    # Return updated user
+    from datetime import datetime
+    user_dict = {
+        'id': current_user.id,
+        'institution_id': current_user.institution_id,
+        'firstname': current_user.firstname,
+        'middlename': current_user.middlename,
+        'lastname': current_user.lastname,
+        'gender': current_user.gender,
+        'address': current_user.address,
+        'email': current_user.email,
+        'phone': current_user.phone,
+        'username': current_user.username,
+        'role': current_user.role,
+        'user_type': getattr(current_user, 'user_type', 'TENANT'),
+        'is_active': current_user.is_active,
+        'must_change_password': getattr(current_user, 'must_change_password', 'false'),
+        'profile_picture': getattr(current_user, 'profile_picture', None),
+        'language': getattr(current_user, 'language', 'en') or 'en',
+        'created_at': None if (current_user.created_at is None or 
+                               (isinstance(current_user.created_at, datetime) and current_user.created_at.year == 0)) 
+                        else current_user.created_at,
+        'updated_at': None if (current_user.updated_at is None or 
+                               (isinstance(current_user.updated_at, datetime) and current_user.updated_at.year == 0)) 
+                        else current_user.updated_at,
+    }
+    return UserResponse(**user_dict)

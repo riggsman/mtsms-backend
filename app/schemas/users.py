@@ -33,6 +33,7 @@ class UserResponse(BaseModel):
     is_active: str
     must_change_password: Optional[str] = "false"
     profile_picture: Optional[str] = None
+    language: Optional[str] = "en"
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -119,6 +120,7 @@ class UserUpdate(BaseModel):
     user_type: Optional[str] = None
     is_active: Optional[str] = None
     must_change_password: Optional[str] = None
+    language: Optional[str] = None
 
 class StudentPasswordAssign(BaseModel):
     student_id: int

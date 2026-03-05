@@ -13,6 +13,7 @@ class UserInfo(BaseModel):
     domain: Optional[str] = None
     institution_id: Optional[int] = None
     mustChangePassword: Optional[bool] = False
+    language: Optional[str] = "en"
     
     class Config:
         from_attributes = True

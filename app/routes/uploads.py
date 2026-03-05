@@ -1,7 +1,7 @@
 """
 Routes for handling file uploads (tenant logo and profile pictures)
 """
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.apis.uploads import (
@@ -20,6 +20,54 @@ import os
 from pathlib import Path
 
 upload_router = APIRouter()
+
+# General file upload endpoint
+@upload_router.post("/uploads/files")
+async def upload_file_endpoint(
+    file: UploadFile = File(...),
+    category: str = Form(...),  # e.g., 'assignments', 'complaints', 'documents'
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant)
+):
+    """
+    General file upload endpoint
+    
+    Uploads a file to the appropriate directory based on category and returns the file URL.
+    Files are saved to uploads/{category}/ directory.
+    
+    Args:
+        file: The file to upload
+        category: Category of file (assignments, complaints, documents, etc.)
+        db: Database session
+        current_user: Current authenticated user
+        
+    Returns:
+        Dictionary with file_url and file_path
+    """
+    from app.helpers.file_upload import save_uploaded_file, get_file_url
+    from app.apis.uploads import get_tenant_domain
+    from fastapi import Request
+    
+    # Get tenant domain for file prefixing
+    institution_id = current_user.institution_id if current_user else None
+    tenant_domain = get_tenant_domain(institution_id) if institution_id else "default"
+    
+    # Save the file
+    file_path, relative_path = await save_uploaded_file(
+        file=file,
+        tenant_domain=tenant_domain,
+        file_category=category
+    )
+    
+    # Generate file URL
+    file_url = get_file_url(relative_path, base_url="/api/v1/uploads")
+    
+    return {
+        "file_url": file_url,
+        "file_path": relative_path,
+        "filename": file.filename,
+        "category": category
+    }
 
 
 @upload_router.post("/uploads/tenant-logo", response_model=TenantSettingsResponse)

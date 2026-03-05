@@ -11,7 +11,7 @@ class Complaint(BaseModel_Base):
     caption = Column(String(200), nullable=False)
     contents = Column(Text, nullable=False)
     is_anonymous = Column(Boolean, default=False, nullable=False)
-    screenshots = Column(Text, nullable=True)  # JSON array of base64 images
+    screenshots = Column(Text, nullable=True)  # JSON array of file URLs (files saved to filesystem)
     status = Column(String(50), default="pending", nullable=False)  # pending, addressed
     resolved_by = Column(String(200), nullable=True)
     resolver_role = Column(String(50), nullable=True)

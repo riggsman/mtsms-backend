@@ -27,6 +27,9 @@ from app.routes import (
     service_configurations,
     uploads,
     departments,
+    email_logs,
+    reminders,
+    payments,
 )
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -129,11 +132,40 @@ app.include_router(
     tags=["service-configurations"],
 )
 
+# Email logs routes
+app.include_router(email_logs.router, prefix="/api/v1", tags=["email-logs"])
+
+# Reminder routes
+app.include_router(reminders.reminder_router, prefix="/api/v1", tags=["reminders"])
+
+# Payment routes
+app.include_router(payments.payment, prefix="/api/v1", tags=["payments"])
+
 # Create metadata database tables (if they don't exist)
 @app.on_event("startup")
 def startup():
     DefaultBase.metadata.create_all(bind=engine)
     BaseModel_Base.metadata.create_all(bind=engine)
+    
+    # Start schedule reminder scheduler
+    try:
+        from app.tasks.schedule_reminder_task import start_schedule_reminder_scheduler
+        start_schedule_reminder_scheduler()
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to start reminder scheduler: {str(e)}")
+
+@app.on_event("shutdown")
+def shutdown():
+    """Stop background tasks on shutdown"""
+    try:
+        from app.tasks.schedule_reminder_task import stop_schedule_reminder_scheduler
+        stop_schedule_reminder_scheduler()
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error stopping reminder scheduler: {str(e)}")
 
 # Health check endpoint
 @app.get("/", tags=["health"])

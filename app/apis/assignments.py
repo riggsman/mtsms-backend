@@ -78,6 +78,8 @@ def delete_assignment(db: Session, assignment_id: int) -> bool:
 
 def submit_assignment(db: Session, submission: AssignmentSubmissionRequest) -> AssignmentSubmission:
     """Submit an assignment"""
+    from app.helpers.file_upload import delete_file
+    
     # Check if assignment exists
     assignment = get_assignment(db, submission.assignment_id)
     
@@ -89,20 +91,47 @@ def submit_assignment(db: Session, submission: AssignmentSubmissionRequest) -> A
     ).first()
     
     if existing:
+        # Delete old file if it exists and is different from new file
+        old_file = existing.submission_file
+        if old_file and old_file != submission.submission_file:
+            # Extract relative path from URL (files are stored as URLs)
+            if old_file.startswith('/api/v1/uploads/'):
+                relative_path = old_file.replace('/api/v1/uploads/', '')
+                try:
+                    delete_file(relative_path)
+                except Exception as e:
+                    print(f"Warning: Could not delete old submission file: {e}")
+        
         # Update existing submission
         existing.submission_file = submission.submission_file
         existing.submission_date = datetime.utcnow()
+        # Store note in feedback field if note field doesn't exist in model
+        # (Note: If model has note field, use that instead)
+        if hasattr(existing, 'note'):
+            existing.note = submission.note
+        elif submission.note:
+            # Store note in feedback if note field doesn't exist
+            existing.feedback = submission.note if not existing.feedback else f"{existing.feedback}\n\nNote: {submission.note}"
         db.commit()
         db.refresh(existing)
         return existing
     
     # Create new submission
-    new_submission = AssignmentSubmission(
-        assignment_id=submission.assignment_id,
-        student_id=submission.student_id,
-        submission_file=submission.submission_file,
-        status="submitted"
-    )
+    submission_data = {
+        "assignment_id": submission.assignment_id,
+        "student_id": submission.student_id,
+        "submission_file": submission.submission_file,
+        "status": "submitted",
+        "institution_id": assignment.institution_id
+    }
+    
+    # Add note if model supports it, otherwise store in feedback
+    if hasattr(AssignmentSubmission, 'note'):
+        submission_data["note"] = submission.note
+    elif submission.note:
+        submission_data["feedback"] = submission.note
+    
+    new_submission = AssignmentSubmission(**submission_data)
     db.add(new_submission)
     db.commit()
     db.refresh(new_submission)

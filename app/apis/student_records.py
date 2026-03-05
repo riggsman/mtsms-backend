@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from decimal import Decimal
 from app.models.student_record import StudentRecord
+from app.models.student import Student
 from app.models.user import User
 from app.schemas.student_records import StudentRecordRequest, StudentRecordUpdate
 from app.exceptions import NotFoundError, ValidationError
@@ -38,8 +39,22 @@ def create_student_record(db: Session, record: StudentRecordRequest, current_use
     
     # Calculate grade and GPA
     letter_grade, gpa = calculate_grade_and_gpa(total_score)
+
+    # Determine institution_id (required by model)
+    institution_id = current_user.institution_id if current_user and current_user.institution_id else None
+    if not institution_id:
+        # Try to resolve from student_id (matricule) in students table
+        student = db.query(Student).filter(
+            Student.student_id == record.student_id,
+            Student.deleted_at.is_(None)
+        ).first()
+        if student:
+            institution_id = student.institution_id
+    if not institution_id:
+        raise ValidationError("institution_id is required to create a student record")
     
     new_record = StudentRecord(
+        institution_id=institution_id,
         student_id=record.student_id,
         course_code=record.course_code,
         semester=record.semester,
@@ -74,12 +89,15 @@ def create_student_record(db: Session, record: StudentRecordRequest, current_use
     
     return new_record
 
-def get_student_record(db: Session, record_id: int) -> StudentRecord:
+def get_student_record(db: Session, record_id: int, institution_id: Optional[int] = None) -> StudentRecord:
     """Get a student record by ID"""
-    record = db.query(StudentRecord).filter(
+    query = db.query(StudentRecord).filter(
         StudentRecord.id == record_id,
         StudentRecord.deleted_at.is_(None)
-    ).first()
+    )
+    if institution_id is not None:
+        query = query.filter(StudentRecord.institution_id == institution_id)
+    record = query.first()
     if not record:
         raise NotFoundError(f"Student record with ID {record_id} not found")
     return record
@@ -88,6 +106,7 @@ def get_student_records(
     db: Session,
     skip: int = 0,
     limit: int = 100,
+    institution_id: Optional[int] = None,
     student_id: Optional[str] = None,
     course_code: Optional[str] = None,
     semester: Optional[str] = None,
@@ -95,6 +114,9 @@ def get_student_records(
 ) -> tuple[List[StudentRecord], int]:
     """Get list of student records with pagination"""
     query = db.query(StudentRecord).filter(StudentRecord.deleted_at.is_(None))
+
+    if institution_id is not None:
+        query = query.filter(StudentRecord.institution_id == institution_id)
     
     if student_id:
         query = query.filter(StudentRecord.student_id.ilike(f"%{student_id}%"))
@@ -110,9 +132,15 @@ def get_student_records(
     
     return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
 
-def update_student_record(db: Session, record_id: int, record_update: StudentRecordUpdate, current_user: Optional[User] = None) -> StudentRecord:
+def update_student_record(
+    db: Session,
+    record_id: int,
+    record_update: StudentRecordUpdate,
+    current_user: Optional[User] = None,
+    institution_id: Optional[int] = None
+) -> StudentRecord:
     """Update a student record"""
-    record = get_student_record(db, record_id)
+    record = get_student_record(db, record_id, institution_id=institution_id)
     
     update_data = record_update.dict(exclude_unset=True)
     
@@ -160,9 +188,9 @@ def update_student_record(db: Session, record_id: int, record_update: StudentRec
     
     return record
 
-def delete_student_record(db: Session, record_id: int, current_user: Optional[User] = None) -> bool:
+def delete_student_record(db: Session, record_id: int, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> bool:
     """Soft delete a student record"""
-    record = get_student_record(db, record_id)
+    record = get_student_record(db, record_id, institution_id=institution_id)
     record_name = f"Record for {record.student_id} - {record.course_code} ({record.semester})"
     institution_id = getattr(record, 'institution_id', None) or (current_user.institution_id if current_user else None)
     record.deleted_at = datetime.utcnow()

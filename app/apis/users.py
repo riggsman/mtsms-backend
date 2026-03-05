@@ -82,6 +82,98 @@ def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = N
             # Don't fail the operation if activity logging fails
             pass
     
+    # Send registration email asynchronously with tracking
+    try:
+        from app.helpers.async_helper import run_async_safe
+        from app.services.email_tracker import EmailTracker
+        # Get tenant/institution name and login URL from tenant domain
+        institution_name = None
+        login_url = None
+        try:
+            from app.database.base import get_db_session
+            global_db = next(get_db_session())
+            try:
+                from app.models.tenant import Tenant
+                tenant = global_db.query(Tenant).filter(
+                    Tenant.database_name == db.bind.url.database
+                ).first()
+                if tenant:
+                    institution_name = tenant.name
+                    if tenant.domain:
+                        login_url = f"https://{tenant.domain}"
+            except Exception as tenant_error:
+                logger.warning(f"Error getting tenant info: {tenant_error}")
+            finally:
+                global_db.close()
+        except Exception as db_error:
+            logger.warning(f"Error accessing global database: {db_error}")
+        
+        # Determine user type for email
+        user_full_name = f"{new_user.firstname} {new_user.lastname}".strip()
+        roles_list = new_user.role.split(',') if ',' in new_user.role else [new_user.role]
+        is_student = 'student' in roles_list
+        
+        # Send email with tracking - use wrapper that calls EmailService methods
+        async def send_tracked_email():
+            if is_student:
+                # Use student registration email with tracking
+                from app.services.email_tracker import EmailTracker
+                from app.conf.config import settings
+                
+                # Get email content from EmailService
+                html_content, text_content = await EmailService._get_student_registration_email_content(
+                    student_name=user_full_name,
+                    student_email=new_user.email,
+                    student_id=new_user.username,
+                    password=user.password,
+                    must_change_password=new_user.must_change_password == "true",
+                    institution_name=institution_name,
+                    login_url=login_url
+                )
+                subject = f"{settings.APP_NAME} - Student Account Registration"
+                
+                await EmailTracker.send_with_tracking(
+                    db=db,
+                    sender_email=settings.SMTP_FROM_EMAIL,
+                    recipient_email=new_user.email,
+                    subject=subject,
+                    html_content=html_content,
+                    text_content=text_content,
+                    institution_id=new_user.institution_id
+                )
+            else:
+                # Use staff registration email with tracking
+                from app.services.email_tracker import EmailTracker
+                from app.conf.config import settings
+                
+                # Get email content from EmailService
+                html_content, text_content = await EmailService._get_lecturer_registration_email_content(
+                    lecturer_name=user_full_name,
+                    lecturer_email=new_user.email,
+                    username=new_user.username,
+                    password=user.password,
+                    employee_id=new_user.username,
+                    institution_name=institution_name,
+                    login_url=login_url,
+                    must_change_password=new_user.must_change_password == "true"
+                )
+                subject = f"{settings.APP_NAME} - Staff Account Created"
+                
+                await EmailTracker.send_with_tracking(
+                    db=db,
+                    sender_email=settings.SMTP_FROM_EMAIL,
+                    recipient_email=new_user.email,
+                    subject=subject,
+                    html_content=html_content,
+                    text_content=text_content,
+                    institution_id=new_user.institution_id
+                )
+        
+        run_async_safe(send_tracked_email())
+    except Exception as e:
+        # Don't fail user creation if email sending fails
+        logger.error(f"Error sending registration email to user {new_user.email}: {e}")
+    
     return new_user
 
 def get_user(db: Session, user_id: int) -> User:
@@ -162,6 +254,9 @@ def update_user(db: Session, user_id: int, user_update: UserUpdate, current_user
     
     db.commit()
     db.refresh(user)
+
+    email_service = EmailService()
+    EmailService().send_user_update_email(user)
     
     # Log activity if current_user is provided
     if current_user:
@@ -268,18 +363,34 @@ def assign_student_password(db: Session, student_id: int, password: str, usernam
             except Exception as db_error:
                 logger.warning(f"Error accessing global database: {db_error}")
             
-            run_async_safe(
-                EmailService.send_student_password_assignment_email(
+            # Send password assignment email with tracking
+            async def send_password_email():
+                from app.services.email_tracker import EmailTracker
+                from app.conf.config import settings
+                
+                html_content, text_content = await EmailService._get_student_password_assignment_email_content(
                     student_name=f"{student.firstname} {student.lastname}".strip(),
                     student_email=student.email,
                     student_id=student.student_id or str(student.id),
                     username=existing_user.username,
-                    password=password,  # Send plain password in email
+                    password=password,
                     must_change_password=True,
                     institution_name=institution_name,
                     login_url=login_url
                 )
-            )
+                subject = f"{settings.APP_NAME} - Your Account Password Has Been Assigned"
+                
+                await EmailTracker.send_with_tracking(
+                    db=db,
+                    sender_email=settings.SMTP_FROM_EMAIL,
+                    recipient_email=student.email,
+                    subject=subject,
+                    html_content=html_content,
+                    text_content=text_content,
+                    institution_id=institution_id or existing_user.institution_id
+                )
+            
+            run_async_safe(send_password_email())
         except Exception as e:
             # Don't fail password assignment if email sending fails
             logger.error(f"Error sending password assignment email to student {student.email}: {e}")
@@ -344,18 +455,34 @@ def assign_student_password(db: Session, student_id: int, password: str, usernam
             except Exception as db_error:
                 logger.warning(f"Error accessing global database: {db_error}")
             
-            run_async_safe(
-                EmailService.send_student_password_assignment_email(
+            # Send password assignment email with tracking
+            async def send_password_email():
+                from app.services.email_tracker import EmailTracker
+                from app.conf.config import settings
+                
+                html_content, text_content = await EmailService._get_student_password_assignment_email_content(
                     student_name=f"{student.firstname} {student.lastname}".strip(),
                     student_email=student.email,
                     student_id=student.student_id or str(student.id),
                     username=new_user.username,
-                    password=password,  # Send plain password in email
+                    password=password,
                     must_change_password=True,
                     institution_name=institution_name,
                     login_url=login_url
                 )
-            )
+                subject = f"{settings.APP_NAME} - Your Account Password Has Been Assigned"
+                
+                await EmailTracker.send_with_tracking(
+                    db=db,
+                    sender_email=settings.SMTP_FROM_EMAIL,
+                    recipient_email=student.email,
+                    subject=subject,
+                    html_content=html_content,
+                    text_content=text_content,
+                    institution_id=institution_id or new_user.institution_id
+                )
+            
+            run_async_safe(send_password_email())
         except Exception as e:
             # Don't fail password assignment if email sending fails
             logger.error(f"Error sending password assignment email to student {student.email}: {e}")
@@ -538,8 +665,12 @@ def suspend_user(db: Session, user_id: int, reason: str, current_user: Optional[
         else:
             student_name = f"{user.firstname} {user.lastname}".strip()
         
-        run_async_safe(
-            EmailService.send_student_suspension_email(
+        # Send suspension email with tracking
+        async def send_suspension_email():
+            from app.services.email_tracker import EmailTracker
+            from app.conf.config import settings
+            
+            html_content, text_content = await EmailService._get_student_suspension_email_content(
                 student_name=student_name,
                 student_email=user.email,
                 student_id=student.student_id if student else str(user.id),
@@ -547,7 +678,21 @@ def suspend_user(db: Session, user_id: int, reason: str, current_user: Optional[
                 institution_name=institution_name,
                 login_url=login_url
             )
-        )
+            subject = f"{settings.APP_NAME} - Account Suspension Notice"
+            
+            institution_id = user.institution_id
+            
+            await EmailTracker.send_with_tracking(
+                db=db,
+                sender_email=settings.SMTP_FROM_EMAIL,
+                recipient_email=user.email,
+                subject=subject,
+                html_content=html_content,
+                text_content=text_content,
+                institution_id=institution_id
+            )
+        
+        run_async_safe(send_suspension_email())
     except Exception as e:
         # Don't fail suspension if email sending fails
         logger.error(f"Error sending suspension email to user {user.email}: {e}")
@@ -656,8 +801,12 @@ def suspend_user_by_student_id(db: Session, student_id: int, reason: str, curren
         
         student_name = f"{student.firstname} {student.lastname}".strip()
         
-        run_async_safe(
-            EmailService.send_student_suspension_email(
+        # Send suspension email with tracking
+        async def send_suspension_email():
+            from app.services.email_tracker import EmailTracker
+            from app.conf.config import settings
+            
+            html_content, text_content = await EmailService._get_student_suspension_email_content(
                 student_name=student_name,
                 student_email=student.email,
                 student_id=student.student_id or str(student.id),
@@ -665,7 +814,21 @@ def suspend_user_by_student_id(db: Session, student_id: int, reason: str, curren
                 institution_name=institution_name,
                 login_url=login_url
             )
-        )
+            subject = f"{settings.APP_NAME} - Account Suspension Notice"
+            
+            institution_id = current_user.institution_id if current_user else None
+            
+            await EmailTracker.send_with_tracking(
+                db=db,
+                sender_email=settings.SMTP_FROM_EMAIL,
+                recipient_email=student.email,
+                subject=subject,
+                html_content=html_content,
+                text_content=text_content,
+                institution_id=institution_id
+            )
+        
+        run_async_safe(send_suspension_email())
     except Exception as e:
         # Don't fail suspension if email sending fails
         logger.error(f"Error sending suspension email to student {student.email}: {e}")

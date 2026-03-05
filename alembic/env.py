@@ -37,6 +37,7 @@ from app.models.note import Note
 from app.models.announcement import Announcement
 from app.models.activity import Activity
 from app.models.tenant_settings import TenantSettings
+from app.models.email_log import EmailLog
 
 # Import Class model (class is a reserved keyword)
 import importlib

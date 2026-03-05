@@ -40,7 +40,7 @@ def create_enrollment_endpoint(
                 detail="Students can only enroll themselves"
             )
     
-    return create_enrollment(db=db, enrollment=enrollment_data)
+    return create_enrollment(db=db, enrollment=enrollment_data, current_user=current_user)
 
 @enrollment.get("/enrollments/{enrollment_id}", response_model=EnrollmentResponse)
 def get_enrollment_endpoint(
@@ -49,7 +49,10 @@ def get_enrollment_endpoint(
     current_user: User = Depends(get_current_user_tenant)
 ):
     """Get enrollment by ID"""
-    return get_enrollment(db=db, enrollment_id=enrollment_id)
+    institution_id = None
+    if current_user and current_user.role and not current_user.role.startswith("system_"):
+        institution_id = current_user.institution_id
+    return get_enrollment(db=db, enrollment_id=enrollment_id, institution_id=institution_id)
 
 @enrollment.get("/enrollments/student/{student_id}", response_model=list[EnrollmentWithCourse])
 def get_student_enrollments_endpoint(
@@ -58,28 +61,46 @@ def get_student_enrollments_endpoint(
     current_user: User = Depends(get_current_user_tenant)
 ):
     """Get all enrollments for a student"""
+    # Determine institution_id for filtering
+    institution_id = None
+    if current_user and current_user.role and not current_user.role.startswith("system_"):
+        institution_id = current_user.institution_id
+    
     # Students can only view their own enrollments
     if current_user.role == UserRole.STUDENT.value:
-        # Find student by user email
+        # Find student by user email (tenant-scoped)
         from app.models.student import Student
-        student = db.query(Student).filter(Student.email == current_user.email).first()
-        if not student or student.id != student_id:
+        student = db.query(Student).filter(
+            Student.email == current_user.email,
+            Student.institution_id == institution_id,
+            Student.deleted_at.is_(None)
+        ).first()
+        if not student:
+            from fastapi import HTTPException, status
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Student record not found for this user"
+            )
+        if student.id != student_id:
             from fastapi import HTTPException, status
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Students can only view their own enrollments"
             )
     
-    return get_student_enrollments(db=db, student_id=student_id, include_course_info=True)
+    return get_student_enrollments(db=db, student_id=student_id, include_course_info=True, institution_id=institution_id)
 
-@enrollment.get("/enrollments/course/{course_id}", response_model=list[EnrollmentResponse])
+@enrollment.get("/enrollments/course/{course_id}")
 def get_course_enrollments_endpoint(
     course_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.STAFF, UserRole.TEACHER))
 ):
-    """Get all enrollments for a course (admin/staff/teacher only)"""
-    return get_course_enrollments(db=db, course_id=course_id)
+    """Get all enrollments for a course with student information (admin/staff/teacher only)"""
+    institution_id = None
+    if current_user and current_user.role and not current_user.role.startswith("system_"):
+        institution_id = current_user.institution_id
+    return get_course_enrollments(db=db, course_id=course_id, institution_id=institution_id)
 
 @enrollment.put("/enrollments/{enrollment_id}", response_model=EnrollmentResponse)
 def update_enrollment_endpoint(
@@ -89,7 +110,10 @@ def update_enrollment_endpoint(
     current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.STAFF))
 ):
     """Update an enrollment (admin/staff only)"""
-    return update_enrollment(db=db, enrollment_id=enrollment_id, enrollment_update=enrollment_update)
+    institution_id = None
+    if current_user and current_user.role and not current_user.role.startswith("system_"):
+        institution_id = current_user.institution_id
+    return update_enrollment(db=db, enrollment_id=enrollment_id, enrollment_update=enrollment_update, institution_id=institution_id)
 
 @enrollment.delete("/enrollments/{enrollment_id}")
 def delete_enrollment_endpoint(
@@ -99,7 +123,10 @@ def delete_enrollment_endpoint(
 ):
     """Delete (unenroll) a student from a course"""
     # Students can unenroll themselves
-    enrollment = get_enrollment(db, enrollment_id)
+    institution_id = None
+    if current_user and current_user.role and not current_user.role.startswith("system_"):
+        institution_id = current_user.institution_id
+    enrollment = get_enrollment(db, enrollment_id, institution_id=institution_id)
     if current_user.role == UserRole.STUDENT.value:
         # Get student ID from user email
         from app.models.student import Student
@@ -117,4 +144,4 @@ def delete_enrollment_endpoint(
                 detail="Students can only unenroll themselves"
             )
     
-    return delete_enrollment(db=db, enrollment_id=enrollment_id)
+    return delete_enrollment(db=db, enrollment_id=enrollment_id, institution_id=institution_id)

@@ -29,10 +29,33 @@ ALLOWED_NOTE_FILE_TYPES = {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 }
 
+ALLOWED_ASSIGNMENT_FILE_TYPES = {
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif'
+}
+
+ALLOWED_COMPLAINT_FILE_TYPES = {
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'image/webp'
+}
+
 # Maximum file sizes (in bytes)
 MAX_LOGO_SIZE = 5 * 1024 * 1024  # 5MB
 MAX_PROFILE_PICTURE_SIZE = 5 * 1024 * 1024  # 5MB
 MAX_NOTE_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_ASSIGNMENT_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_COMPLAINT_FILE_SIZE = 5 * 1024 * 1024  # 5MB per screenshot
 
 
 def sanitize_domain(domain: str) -> str:
@@ -160,6 +183,10 @@ async def save_uploaded_file(
         upload_subdir = 'profile_pictures'
     elif file_category == 'notes':
         upload_subdir = 'notes'
+    elif file_category == 'assignments' or file_category == 'assignment_submissions':
+        upload_subdir = 'assignments'
+    elif file_category == 'complaints' or file_category == 'screenshots':
+        upload_subdir = 'complaints'
     else:
         # Use file_category as subdirectory name
         upload_subdir = file_category
@@ -174,6 +201,12 @@ async def save_uploaded_file(
     elif file_category == 'notes':
         validate_file_type(file, ALLOWED_NOTE_FILE_TYPES)
         validate_file_size(file, MAX_NOTE_FILE_SIZE)
+    elif file_category == 'assignments' or file_category == 'assignment_submissions':
+        validate_file_type(file, ALLOWED_ASSIGNMENT_FILE_TYPES)
+        validate_file_size(file, MAX_ASSIGNMENT_FILE_SIZE)
+    elif file_category == 'complaints' or file_category == 'screenshots':
+        validate_file_type(file, ALLOWED_COMPLAINT_FILE_TYPES)
+        validate_file_size(file, MAX_COMPLAINT_FILE_SIZE)
     else:
         # Default validation for other file types
         validate_file_type(file, ALLOWED_IMAGE_TYPES)

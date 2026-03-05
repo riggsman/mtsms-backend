@@ -66,12 +66,15 @@ def create_course(db: Session, course: CourseRequest, institution_id: Optional[i
     return new_course
 
 
-def get_course(db: Session, course_id: int) -> Course:
+def get_course(db: Session, course_id: int, institution_id: Optional[int] = None) -> Course:
     """Get a course by ID"""
-    course = db.query(Course).filter(
+    query = db.query(Course).filter(
         Course.id == course_id,
         Course.deleted_at.is_(None)
-    ).first()
+    )
+    if institution_id is not None:
+        query = query.filter(Course.institution_id == institution_id)
+    course = query.first()
     if not course:
         raise NotFoundError(f"Course with ID {course_id} not found")
     
@@ -137,9 +140,15 @@ def get_courses(
     return courses, total
 
 
-def update_course(db: Session, course_id: int, course_update: CourseUpdate, current_user: Optional[User] = None) -> Course:
+def update_course(
+    db: Session,
+    course_id: int,
+    course_update: CourseUpdate,
+    current_user: Optional[User] = None,
+    institution_id: Optional[int] = None
+) -> Course:
     """Update a course"""
-    course = get_course(db, course_id)
+    course = get_course(db, course_id, institution_id=institution_id)
     
     update_data = course_update.dict(exclude_unset=True)
     
@@ -190,9 +199,9 @@ def update_course(db: Session, course_id: int, course_update: CourseUpdate, curr
     return course
 
 
-def delete_course(db: Session, course_id: int, current_user: Optional[User] = None) -> bool:
+def delete_course(db: Session, course_id: int, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> bool:
     """Soft delete a course"""
-    course = get_course(db, course_id)
+    course = get_course(db, course_id, institution_id=institution_id)
     course_name = f"{course.code} - {course.name}"
     institution_id = course.institution_id
     from datetime import datetime

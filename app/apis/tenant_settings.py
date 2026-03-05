@@ -36,6 +36,9 @@ def create_or_update_tenant_settings(
             # If matricule_format is provided in the request, update it and set flag to True
             existing.matricule_format = matricule_format_json
             existing.is_matricule_format_set = True
+        # Update email_reminder_time if provided
+        if settings.email_reminder_time is not None:
+            existing.email_reminder_time = settings.email_reminder_time
         db.commit()
         db.refresh(existing)
         return existing
@@ -45,7 +48,8 @@ def create_or_update_tenant_settings(
         new_settings = TenantSettings(
             institution_id=institution_id,
             matricule_format=matricule_format_json,
-            is_matricule_format_set=True if has_matricule_format_in_request else False
+            is_matricule_format_set=True if has_matricule_format_in_request else False,
+            email_reminder_time=settings.email_reminder_time if settings.email_reminder_time is not None else 30
         )
         db.add(new_settings)
         db.commit()

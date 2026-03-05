@@ -18,3 +18,4 @@ aiosmtplib
 reportlab 
 python-docx 
 beautifulsoup4
+APScheduler==3.10.4

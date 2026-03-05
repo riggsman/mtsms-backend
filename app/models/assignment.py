@@ -25,7 +25,7 @@ class AssignmentSubmission(BaseModel_Base):
     institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
     assignment_id = Column(Integer, nullable=False, index=True)
     student_id = Column(String(70), nullable=False, index=True)
-    submission_file = Column(Text, nullable=True)  # Base64 or file path
+    submission_file = Column(Text, nullable=True)  # File URL/path (files saved to filesystem)
     submission_date = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     status = Column(String(50), default="submitted", nullable=False)  # submitted, late, graded
     grade = Column(String(10), nullable=True)

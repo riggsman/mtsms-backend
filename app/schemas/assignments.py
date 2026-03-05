@@ -54,11 +54,30 @@ class AssignmentSubmissionResponse(BaseModel):
     student_id: str
     submission_file: Optional[str]
     submission_date: datetime
+    submitted_at: Optional[datetime] = None  # Alias for submission_date for frontend compatibility
     status: str
     grade: Optional[str]
+    score: Optional[float] = None  # Alias for grade (converted to float if numeric)
     feedback: Optional[str]
+    note: Optional[str] = None  # Additional note field for submissions
     created_at: datetime
     updated_at: Optional[datetime]
 
     class Config:
         from_attributes = True
+    
+    def __init__(self, **data):
+        # Map submission_date to submitted_at if not provided
+        if 'submitted_at' not in data and 'submission_date' in data:
+            data['submitted_at'] = data['submission_date']
+        
+        # Convert grade to score if grade is numeric
+        if 'score' not in data and 'grade' in data and data.get('grade'):
+            try:
+                # Try to convert grade string to float
+                data['score'] = float(data['grade'])
+            except (ValueError, TypeError):
+                # If conversion fails, leave score as None
+                pass
+        
+        super().__init__(**data)

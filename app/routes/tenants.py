@@ -2,17 +2,19 @@ from fastapi import APIRouter, Depends, Query, File, UploadFile, Form, Request
 from sqlalchemy.orm import Session
 from typing import Optional
 import json
+from app.dependencies.tenantDependency import get_db
 from app.schemas.tenant import TenantRequest, TenantResponse, TenantUpdate
 from app.apis.tenant import (
     create_new_tenant, get_tenant_by_name, get_tenant_by_id,
     get_all_tenants, update_tenant, delete_tenant
 )
 from app.database.base import get_db_session
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, get_current_user_tenant
 from app.helpers.pagination import PaginatedResponse
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Header
 from app.models.user import User
 from app.models.role import UserRole
+from typing import Optional
 
 tenant = APIRouter()
 
@@ -187,6 +189,59 @@ async def list_tenants(
         page=page,
         page_size=page_size
     )
+
+@tenant.get("/tenants/me", response_model=TenantResponse)
+async def get_my_tenant(
+    x_tenant_name: Optional[str] = Header(default=None, alias="X-Tenant-Name"),
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get current user's tenant information.
+    Accessible to all authenticated users - returns their own tenant based on user's institution_id.
+    Falls back to X-Tenant-Name header if institution_id is not available.
+    """
+    # System admins don't have a tenant
+    is_system_admin = current_user.role and current_user.role.startswith('system_')
+    if is_system_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="System admins do not belong to a tenant"
+        )
+    
+    tenant = None
+    
+    # Priority 1: Use institution_id to get tenant by ID (most reliable)
+    if current_user.institution_id:
+        try:
+            tenant = get_tenant_by_id(db, current_user.institution_id)
+        except Exception as e:
+            # If tenant not found by ID, continue to fallback methods
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Tenant not found by institution_id {current_user.institution_id}: {e}")
+    
+    # Priority 2: Use tenant name from header
+    if not tenant and x_tenant_name:
+        tenant = get_tenant_by_name(db, x_tenant_name)
+    
+    # Priority 3: Try to get tenant name from user attributes
+    if not tenant:
+        tenant_name = getattr(current_user, 'tenant_name', None) or \
+                     getattr(current_user, 'tenantName', None) or \
+                     getattr(current_user, 'domain', None)
+        if tenant_name:
+            tenant = get_tenant_by_name(db, tenant_name)
+    
+    if not tenant:
+        from app.exceptions import NotFoundError
+        raise NotFoundError(
+            f"Tenant not found. User institution_id: {current_user.institution_id}, "
+            f"X-Tenant-Name header: {x_tenant_name}"
+        )
+    
+    # Convert SQLAlchemy model to Pydantic response model
+    return TenantResponse.model_validate(tenant, from_attributes=True)
 
 @tenant.get("/tenants/{identifier}", response_model=TenantResponse)
 async def get_tenant_info(
