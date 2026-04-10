@@ -9,12 +9,14 @@ from app.schemas.contact import (
 from app.services.email_service import EmailService
 from app.helpers.async_helper import run_async_safe
 from app.conf.config import settings
+from typing import Optional, List
 from app.database.base import get_db_session
-from app.dependencies.auth import require_any_role_admin
+from app.dependencies.auth import require_any_role_admin, get_current_user_optional
 from app.models.user import User
 from app.models.role import UserRole
 from app.models.contact_message import ContactMessage
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import role_string_for_legacy
 
 
 contact = APIRouter()
@@ -130,7 +132,7 @@ This is an automated acknowledgement from {app_name}. Please do not reply to thi
 )
 def list_contact_messages(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     only_unread: bool = Query(False),
     db: Session = Depends(get_db_session),
     current_user: User = Depends(
@@ -172,13 +174,24 @@ def list_contact_messages(
 @contact.get("/admin/contact-messages/unread-count")
 def get_unread_contact_messages_count(
     db: Session = Depends(get_db_session),
-    current_user: User = Depends(
-        require_any_role_admin(UserRole.ADMIN, UserRole.STAFF, UserRole.SUPER_ADMIN, UserRole.SECRETARY)
-    ),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """
     Get the count of unread contact messages.
+    Returns 0 if no user is logged in or if the user is not an admin/staff.
     """
+    if not current_user:
+        return {"unread_count": 0}
+
+    # Check if user has permission to see these messages (Admin, Staff, Super Admin, Secretary)
+    from app.dependencies.auth import _expanded_roles_from_user
+    user_roles = _expanded_roles_from_user(current_user)
+    
+    # We use strings for comparison to be safe with different role implementations
+    allowed_roles = {"admin", "staff", "super_admin", "secretary", "system_admin", "system_super_admin"}
+    if not any(role in user_roles for role in allowed_roles):
+        return {"unread_count": 0}
+
     count = (
         db.query(ContactMessage)
         .filter(
@@ -187,7 +200,7 @@ def get_unread_contact_messages_count(
         )
         .count()
     )
-
+    # print("UNREAD MESSAGE COUNT", count)
     return {"unread_count": count}
 
 
@@ -320,7 +333,7 @@ This message was sent to you from {app_name} in response to your enquiry.
     message.reply_message = payload.message
     message.replied_at = datetime.utcnow()
     message.replied_by = f"{current_user.firstname} {current_user.lastname}".strip()
-    message.replied_by_role = current_user.role
+    message.replied_by_role = role_string_for_legacy(current_user)
     message.is_read = True
 
     db.commit()

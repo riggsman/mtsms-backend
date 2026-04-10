@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.database.base import DefaultBase, engine
 from app.database.sessionManager import BaseModel_Base
+from app.dependencies import auth
 from app.routes import (
     login,
     register_user,
@@ -30,8 +31,13 @@ from app.routes import (
     email_logs,
     reminders,
     payments,
+    branches,
+    fee_structure,
+    schools,
+    student_payments,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from app.conf.config import settings
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -40,21 +46,24 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS configuration – explicitly allow common frontend dev origins
-origins = [
-    "http://localhost",
-    "http://127.0.0.1",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+# CORS configuration
+# If allow_origins is ["*"], we cannot use allow_credentials=True
+# We use allow_origin_regex to allow everything while still allowing credentials
+is_allow_all_origins = "*" in settings.cors_origins_list
+
+# Browsers send Origin on preflight (OPTIONS). If it is not in allow_origins exactly,
+# Starlette returns 400 for OPTIONS. This regex allows any port on localhost / 127.0.0.1 / ::1
+# so Vite (5173), CRA (3000), or other dev ports all work without listing each one.
+_LOCAL_DEV_ORIGIN_REGEX = r"https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?"
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[] if is_allow_all_origins else settings.cors_origins_list,
+    allow_origin_regex=r"https?://.*" if is_allow_all_origins else _LOCAL_DEV_ORIGIN_REGEX,
     # We use Authorization headers instead of cookies, so credentials are not required
-    allow_credentials=False,
+    # Some frontend requests include credentials (e.g., cookie-backed sessions),
+    # so we must allow them for the browser to accept CORS responses.
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -104,6 +113,7 @@ app.include_router(complaints.complaint, prefix="/api/v1", tags=["complaints"])
 
 # Configuration routes
 app.include_router(tenant_settings.tenant_settings_router, prefix="/api/v1", tags=["tenant-settings"])
+app.include_router(branches.router, prefix="/api/v1", tags=["branches"])
 
 # File upload routes
 app.include_router(uploads.upload_router, prefix="/api/v1", tags=["uploads"])
@@ -141,6 +151,20 @@ app.include_router(reminders.reminder_router, prefix="/api/v1", tags=["reminders
 # Payment routes
 app.include_router(payments.payment, prefix="/api/v1", tags=["payments"])
 
+# Fee Structure routes
+app.include_router(fee_structure.fee_structure, prefix="/api/v1", tags=["fee-structure"])
+
+# Schools routes (Engineering, Business, Biomedical with levels)
+app.include_router(schools.router, prefix="/api/v1", tags=["schools"])
+
+# Student Payments routes
+app.include_router(student_payments.router, prefix="/api/v1", tags=["student-payments"])
+
+# Import models to register them with metadata for table creation
+from app.models.school import School, SchoolFee
+from app.models.fee_structure import FeeStructure, FeeInstallment
+from app.models.student_payment import StudentPayment, StudentPaymentInstallment
+
 # Create metadata database tables (if they don't exist)
 @app.on_event("startup")
 def startup():
@@ -149,7 +173,9 @@ def startup():
     
     # Start schedule reminder scheduler
     try:
+        from app.authentication.authenticator import verify_password, hash_password
         from app.tasks.schedule_reminder_task import start_schedule_reminder_scheduler
+        print("SYSTEM ADMIN PASSWORD ", hash_password("admin123"))  # Example usage of hash_password to ensure it's working
         start_schedule_reminder_scheduler()
     except Exception as e:
         import logging

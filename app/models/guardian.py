@@ -4,8 +4,8 @@ import datetime
 
 class Guardian(BaseModel_Base):
     __tablename__ = "guardians"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
     guardian_name = Column(String(200), nullable=False)
     phone = Column(String(200), nullable=False)
     address = Column(String(200), nullable=False)

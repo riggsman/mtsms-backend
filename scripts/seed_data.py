@@ -58,12 +58,14 @@ def seed_academic_years(db):
     """Seed academic years - required for students"""
     academic_years_data = [
         {
+            'institution_id': 1,
             'name': '2023-2024',
             'start_date': '2023-09-01',
             'end_date': '2024-06-30',
             'is_current': True
         },
         {
+            'institution_id': 1,
             'name': '2024-2025',
             'start_date': '2024-09-01',
             'end_date': '2025-06-30',
@@ -459,19 +461,6 @@ def seed_users(db):
     
     users_data = [
         {
-            'institution_id': 1,
-            'firstname': 'Admin',
-            'lastname': 'User',
-            'email': 'admin@school.com',
-            'phone': '+1234567800',
-            'username': 'admin',
-            'password': admin_password,
-            'role': 'admin',
-            'is_active': 'active',
-            'gender': 'Male',
-            'address': 'Admin Office'
-        },
-        {
             'institution_id': None,  # System admin doesn't belong to a tenant
             'firstname': 'Super',
             'lastname': 'Admin',
@@ -483,19 +472,6 @@ def seed_users(db):
             'is_active': 'active',
             'gender': 'Male',
             'address': 'System Admin Office'
-        },
-        {
-            'institution_id': 1,
-            'firstname': 'Secretary',
-            'lastname': 'User',
-            'email': 'secretary@school.com',
-            'phone': '+1234567802',
-            'username': 'secretary',
-            'password': secretary_password,
-            'role': 'secretary',
-            'is_active': 'active',
-            'gender': 'Female',
-            'address': 'Secretary Office'
         }
     ]
     
@@ -521,33 +497,33 @@ def main():
     
     db = next(get_db_session())
     try:
-        # Seed in order: dependencies first
-        print("\n1. Seeding departments...")
-        department_map = seed_departments(db)
+        # # Seed in order: dependencies first
+        # print("\n1. Seeding departments...")
+        # department_map = seed_departments(db)
         
         print("\n2. Seeding academic years...")
         academic_year_map = seed_academic_years(db)
         
-        print("\n3. Seeding classes...")
-        class_map = seed_classes(db, department_map, academic_year_map)
+        # print("\n3. Seeding classes...")
+        # class_map = seed_classes(db, department_map, academic_year_map)
         
-        print("\n4. Seeding guardians...")
-        guardian_map = seed_guardians(db)
+        # print("\n4. Seeding guardians...")
+        # guardian_map = seed_guardians(db)
         
-        print("\n5. Seeding courses...")
-        seed_courses(db, department_map)
+        # print("\n5. Seeding courses...")
+        # seed_courses(db, department_map)
         
-        print("\n6. Seeding schedules...")
-        seed_schedules(db)
+        # print("\n6. Seeding schedules...")
+        # seed_schedules(db)
         
-        print("\n7. Seeding teachers...")
-        seed_teachers(db, department_map)
+        # print("\n7. Seeding teachers...")
+        # seed_teachers(db, department_map)
         
-        print("\n8. Seeding students...")
-        seed_students(db, department_map, class_map, academic_year_map, guardian_map)
+        # print("\n8. Seeding students...")
+        # seed_students(db, department_map, class_map, academic_year_map, guardian_map)
         
-        print("\n9. Seeding assignments...")
-        seed_assignments(db)
+        # print("\n9. Seeding assignments...")
+        # seed_assignments(db)
         
         print("\n10. Seeding users...")
         seed_users(db)

@@ -1,11 +1,11 @@
 import argon2
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from app.authentication.authenticator import create_access_token, create_refresh_token, verify_and_decode_access_token, verify_password
 from app.models.user import User
 from app.schemas.login import LoginRequest, LoginResponse
 from app.database.base import get_db_session
-
+from app.helpers.user_roles import role_string_for_legacy, user_is_system_admin, user_roles_list
 
 
 async def new_login(loginRequest: LoginRequest, db: Session, tenant_name: str = None):
@@ -28,7 +28,7 @@ async def new_login(loginRequest: LoginRequest, db: Session, tenant_name: str = 
         # System admins (roles starting with 'system_') don't need tenant
         tenant_name_from_user = None
         tenant_domain_from_user = None
-        is_system_admin = user.role and user.role.startswith('system_')
+        is_system_admin = user_is_system_admin(user)
         
         # Always fetch tenant information from database using institution_id
         if not is_system_admin and user.institution_id:
@@ -44,6 +44,10 @@ async def new_login(loginRequest: LoginRequest, db: Session, tenant_name: str = 
                     print(f"Fetched tenant from database - Name: {tenant_name_from_user}, Domain: {tenant_domain_from_user}")
             except Exception as e:
                 print(f"Error fetching tenant from database: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Error fetching tenant from database"
+                )
             finally:
                 global_db.close()
         
@@ -52,10 +56,11 @@ async def new_login(loginRequest: LoginRequest, db: Session, tenant_name: str = 
         final_tenant_name = tenant_name_from_user if tenant_name_from_user else (tenant_name if not is_system_admin else None)
         final_domain = tenant_domain_from_user  # Always use domain from database if available
         
+        role_for_token = user_roles_list(user)
         data = {
             "sub": user.id.__str__(),
             "username": user.firstname + " " + user.lastname,
-            "roles": user.role,
+            "roles": role_for_token,
             "institution_id": user.institution_id
         }
         
@@ -65,7 +70,8 @@ async def new_login(loginRequest: LoginRequest, db: Session, tenant_name: str = 
             id=user.id,
             username=user.username,
             email=user.email,
-            role=user.role,
+            roles=role_for_token,
+            role=role_string_for_legacy(user),
             firstname=user.firstname,
             lastname=user.lastname,
             tenantName=final_tenant_name,
@@ -93,13 +99,14 @@ async def refresh_access_token(refresh_token: str):
     from app.authentication.authenticator import verify_and_decode_access_token, create_access_token, create_refresh_token
     
     # Verify the refresh token
-    try:
-        token_result = verify_and_decode_access_token(refresh_token, raise_exception=True)
-    except HTTPException:
-        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    token_result = verify_and_decode_access_token(refresh_token)
     
     if not token_result.get("success"):
-        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+        error_msg = token_result.get("error", "Invalid refresh token")
+        # Ensure we return "Token has expired" if that's the error
+        if "expired" in error_msg.lower():
+            raise HTTPException(status_code=401, detail="Token has expired")
+        raise HTTPException(status_code=401, detail=error_msg)
     
     # Extract user data from refresh token
     payload = token_result.get("data")
@@ -121,10 +128,11 @@ async def refresh_access_token(refresh_token: str):
             raise HTTPException(status_code=401, detail="User account is not active")
         
         # Create new tokens with same user data
+        role_for_token = user_roles_list(user)
         data = {
             "sub": str(user.id),
             "username": user.firstname + " " + user.lastname,
-            "roles": user.role,
+            "roles": role_for_token,
             "institution_id": user.institution_id
         }
         

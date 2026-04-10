@@ -7,6 +7,7 @@ from app.models.student import Student
 from app.models.user import User
 from app.schemas.enrollment import EnrollmentCreate, EnrollmentUpdate, EnrollmentResponse, EnrollmentWithCourse
 from app.exceptions import NotFoundError, ConflictError, ValidationError
+from app.helpers.user_roles import user_requires_tenant_scope_for_data
 
 def create_enrollment(db: Session, enrollment: EnrollmentCreate, current_user: User | None = None):
     """Create a new enrollment"""
@@ -48,7 +49,7 @@ def create_enrollment(db: Session, enrollment: EnrollmentCreate, current_user: U
         raise ValidationError("Student and course belong to different institutions")
 
     # If we have a current_user with institution_id, enforce it (unless system role)
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         if current_user.institution_id and current_user.institution_id != institution_id:
             raise ValidationError("Cross-tenant enrollment is not allowed")
     
@@ -203,3 +204,32 @@ def delete_enrollment(db: Session, enrollment_id: int, institution_id: int | Non
     db.commit()
     
     return {"message": "Enrollment deleted successfully"}
+
+
+def delete_enrollment_by_course_id(
+    db: Session,
+    course_id: int,
+    student_id: int,
+    institution_id: int | None = None
+):
+    """Soft delete student's enrollment by course ID."""
+    query = db.query(Enrollment).filter(
+        and_(
+            Enrollment.course_id == course_id,
+            Enrollment.student_id == student_id,
+            Enrollment.deleted_at.is_(None)
+        )
+    )
+    if institution_id is not None:
+        query = query.filter(Enrollment.institution_id == institution_id)
+    enrollment = query.first()
+
+    if not enrollment:
+        raise NotFoundError(f"Enrollment not found for student_id={student_id} and course_id={course_id}")
+
+    from datetime import datetime
+    enrollment.deleted_at = datetime.utcnow()
+    enrollment.status = "dropped"
+    db.commit()
+
+    return {"message": "Course dropped successfully"}

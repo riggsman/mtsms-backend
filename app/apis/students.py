@@ -7,7 +7,9 @@ from app.exceptions import NotFoundError, ConflictError, ValidationError
 from app.helpers.pagination import paginate_query
 from app.helpers.activity_logger import log_create_activity, log_update_activity, log_delete_activity, get_user_display_name
 from app.apis.tenant_settings import generate_student_id, is_matricule_format_configured
+from app.apis.classes import check_classes_configured
 import datetime
+from app.helpers.logger import *
 
 def create_student(db: Session, student: StudentRequest, institution_id: Optional[int] = None, current_user: Optional[User] = None) -> Student:
     """Create a new student"""
@@ -18,6 +20,13 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
         from app.exceptions import ValidationError
         raise ValidationError("institution_id is required to create a student")
     
+    # Check if classes are configured for this institution
+    if not check_classes_configured(db, final_institution_id):
+        raise ValidationError(
+            "Classes have not been configured for this institution. "
+            "Please configure classes before registering students."
+        )
+    
     # Check if email already exists within the same institution
     existing = db.query(Student).filter(
         Student.email == student.email,
@@ -25,6 +34,7 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
         Student.deleted_at.is_(None)
     ).first()
     if existing:
+        error(f"Student with email {student.email} already exists")
         raise ConflictError(f"Student with email {student.email} already exists")
     
     # Generate student_id if not provided or empty
@@ -197,7 +207,8 @@ def get_students(
     institution_id: Optional[int] = None,
     class_id: Optional[int] = None,
     department_id: Optional[int] = None,
-    academic_year_id: Optional[int] = None
+    academic_year_id: Optional[int] = None,
+    branch_id: Optional[int] = None,
 ) -> tuple[List[Student], int]:
     """Get list of students with pagination"""
     query = db.query(Student).filter(Student.deleted_at.is_(None))
@@ -214,6 +225,8 @@ def get_students(
         query = query.filter(Student.department_id == department_id)
     if academic_year_id:
         query = query.filter(Student.academic_year_id == academic_year_id)
+    if branch_id is not None:
+        query = query.filter(Student.branch_id == branch_id)
     
     return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
 

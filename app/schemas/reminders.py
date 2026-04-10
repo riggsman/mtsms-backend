@@ -28,17 +28,17 @@ class ReminderStatusResponse(BaseModel):
 
 class UserReminderResponse(BaseModel):
     """Response model for user reminders"""
-    id: int
+    # id: int
     schedule_id: int
-    course_name: str
-    instructor: str
-    day: str
-    start_time: str
-    end_time: str
-    room: Optional[str]
-    class_start_time: datetime
-    reminder_time: datetime
-    is_dismissed: bool
+    # course_name: str
+    # instructor: str
+    # day: str
+    # start_time: str
+    # end_time: str
+    # room: Optional[str]
+    # class_start_time: datetime
+    # reminder_time: datetime
+    # is_dismissed: bool
     
     class Config:
         from_attributes = True

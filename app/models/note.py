@@ -4,13 +4,13 @@ import datetime
 
 class Note(BaseModel_Base):
     __tablename__ = "notes"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
     title = Column(String(200), nullable=False)
-    course_id = Column(Integer, ForeignKey('courses.id'), nullable=False, index=True)
+    course_id = Column(Integer, ForeignKey('courses.id'), nullable=False)
     course_code = Column(String(50), nullable=True)  # Optional course code
-    department_id = Column(Integer, nullable=False, index=True)
-    lecturer_id = Column(Integer, ForeignKey('teachers.id'), nullable=False, index=True)
+    department_id = Column(Integer, nullable=False)
+    lecturer_id = Column(Integer, ForeignKey('teachers.id'), nullable=False)
     content = Column(Text, nullable=False)  # Rich text content
     pdf_file_path = Column(String(500), nullable=True)  # Path to PDF file
     word_file_path = Column(String(500), nullable=True)  # Path to Word file

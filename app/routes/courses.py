@@ -12,6 +12,7 @@ from app.dependencies.institutionDependency import get_institution_id_from_heade
 from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import user_requires_tenant_scope_for_data
 
 course = APIRouter()
 
@@ -52,7 +53,7 @@ def get_course_endpoint(
 ):
     """Get a course by ID"""
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     return get_course(db=db, course_id=course_id, institution_id=institution_id)
 
@@ -60,7 +61,7 @@ def get_course_endpoint(
 @course.get("/courses", response_model=PaginatedResponse[CourseResponse])
 def list_courses(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=10000),
     department_id: Optional[int] = Query(None),
     level_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
@@ -97,7 +98,7 @@ def update_course_endpoint(
 ):
     """Update a course"""
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     return update_course(db=db, course_id=course_id, course_update=course_update, current_user=current_user, institution_id=institution_id)
 
@@ -110,7 +111,7 @@ def delete_course_endpoint(
 ):
     """Delete a course (soft delete)"""
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     delete_course(db=db, course_id=course_id, current_user=current_user, institution_id=institution_id)
     return None

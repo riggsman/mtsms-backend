@@ -11,6 +11,7 @@ from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import user_is_system_admin
 
 class_router = APIRouter()
 
@@ -41,7 +42,7 @@ def get_class_endpoint(
 @class_router.get("/classes", response_model=PaginatedResponse[ClassResponse])
 def list_classes(
     page: Optional[int] = Query(None, ge=1),
-    page_size: Optional[int] = Query(None, ge=1, le=100),
+    page_size: Optional[int] = Query(None, ge=1, le=10000),
     institution_level: Optional[str] = Query(None),
     category: Optional[str] = Query(None, description="Filter by category (HI or SI). Maps to institution_level."),
     department_id: Optional[int] = Query(None),
@@ -54,7 +55,7 @@ def list_classes(
         # Determine institution_id for filtering
         institution_id = None
         if current_user:
-            is_system_admin = current_user.role and current_user.role.startswith('system_')
+            is_system_admin = user_is_system_admin(current_user)
             if not is_system_admin:
                 institution_id = current_user.institution_id
                 if not institution_id:
@@ -88,7 +89,7 @@ def list_classes(
     # Determine institution_id for filtering
     institution_id = None
     if current_user:
-        is_system_admin = current_user.role and current_user.role.startswith('system_')
+        is_system_admin = user_is_system_admin(current_user)
         if not is_system_admin:
             institution_id = current_user.institution_id
             if not institution_id:

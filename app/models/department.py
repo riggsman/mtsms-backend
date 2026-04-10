@@ -4,8 +4,8 @@ import datetime
 
 class Department(BaseModel_Base):
     __tablename__ = "departments"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
     name = Column(String(200), nullable=False)
     code = Column(String(50), nullable=False, unique=True)
     description = Column(Text, nullable=True)

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.schemas.tenant_settings import TenantSettingsRequest, TenantSettingsResponse
 from app.apis.tenant_settings import (
+    get_tenant_category,
     get_tenant_settings,
     create_or_update_tenant_settings,
     is_matricule_format_configured
@@ -25,17 +26,21 @@ def get_settings(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must belong to an institution to access tenant settings"
         )
-    
+    print("INSTITUTION ID FROM CLIENT ", institution_id)
+    category = get_tenant_category(db, institution_id)
     settings = get_tenant_settings(db, institution_id)
-    if not settings:
+    print("INSTITUTION ID FROM SERVER ", settings.category)
+    if not settings or not category:
         # Return default response if no settings exist
         return TenantSettingsResponse(
             id=0,
             institution_id=institution_id,
-            matricule_format=None
+            matricule_format=None,
+            branches_enabled=False,
         )
     
     # model_validator will handle JSON string parsing automatically
+     
     return TenantSettingsResponse.model_validate(settings)
 
 @tenant_settings_router.put("/tenant-settings", response_model=TenantSettingsResponse)

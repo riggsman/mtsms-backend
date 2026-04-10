@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from app.database.base import get_db_session
 from app.dependencies.auth import get_current_user
+from app.helpers.user_roles import user_is_system_admin, user_is_tenant_super_admin_or_system
 from app.models.user import User
 from app.models.role import UserRole
 from app.models.tenant import Tenant
@@ -18,8 +19,7 @@ system_admin = APIRouter()
 
 def check_system_admin(current_user: User):
     """Helper to check if user is system admin"""
-    if (current_user.role != UserRole.SUPER_ADMIN.value and 
-        not (current_user.role and current_user.role.startswith('system_'))):
+    if not user_is_tenant_super_admin_or_system(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Required system admin role"
@@ -70,7 +70,7 @@ async def get_system_stats(
 
 @system_admin.get("/system/recent-tenants")
 async def get_recent_tenants(
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=1000),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session)
 ):
@@ -226,10 +226,7 @@ async def update_system_settings(
     Update global system settings from the admin UI.
     Only fields provided in the payload are updated (partial update).
     """
-    # Check if user is system admin or system super admin
-    if (current_user.role != UserRole.SYSTEM_ADMIN.value and 
-        current_user.role != UserRole.SYSTEM_SUPER_ADMIN.value and
-        not (current_user.role and current_user.role.startswith('system_'))):
+    if not user_is_system_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only system admin or system super admin can update system settings"

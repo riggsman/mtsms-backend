@@ -284,6 +284,7 @@ class EmailService:
     ) -> tuple[str, str]:
         """Get lecturer registration email content (HTML and text) without sending"""
         password_instruction = ""
+        tenant_label = institution_name or "your institution"
         if must_change_password:
             password_instruction = "You will be required to change your password on your first login for security purposes."
         else:
@@ -309,7 +310,7 @@ class EmailService:
                 </div>
                 <div class="content">
                     <p>Dear {lecturer_name},</p>
-                    <p>Your staff account has been successfully created{f' for {institution_name}' if institution_name else ''}.</p>
+                    <p>Your staff account has been successfully created for <strong>{tenant_label}</strong>.</p>
                     
                     <div class="credentials">
                         <h3>Your Login Credentials:</h3>
@@ -323,9 +324,11 @@ class EmailService:
                     <p><strong>Important:</strong> {password_instruction}</p>
                     
                     <p>If you have any questions, please contact your administrator.</p>
+                    <p><em>Powered by EduSphere</em></p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {settings.APP_NAME} for {tenant_label}</p>
+                    <p><strong>Powered by EduSphere</strong></p>
                 </div>
             </div>
         </body>
@@ -337,7 +340,7 @@ class EmailService:
         
         Dear {lecturer_name},
         
-        Your staff account has been successfully created{f' for {institution_name}' if institution_name else ''}.
+        Your staff account has been successfully created for {tenant_label}.
         
         Your Login Credentials:
         Employee ID: {employee_id}
@@ -350,7 +353,8 @@ class EmailService:
         
         If you have any questions, please contact your administrator.
         
-        This is an automated message from {settings.APP_NAME}
+        This is an automated message from {settings.APP_NAME} for {tenant_label}
+        Powered by EduSphere
         """
         
         return html_content, text_content
@@ -444,6 +448,7 @@ class EmailService:
     ) -> tuple[str, str]:
         """Get student registration email content with password (HTML and text) without sending"""
         password_instruction = ""
+        tenant_label = institution_name or "your institution"
         if must_change_password:
             password_instruction = "You will be required to change your password on your first login for security purposes."
         else:
@@ -469,7 +474,7 @@ class EmailService:
                 </div>
                 <div class="content">
                     <p>Dear {student_name},</p>
-                    <p>Your student account has been successfully created{f' at {institution_name}' if institution_name else ''}.</p>
+                    <p>Your student account has been successfully created for <strong>{tenant_label}</strong>.</p>
                     
                     <div class="credentials">
                         <h3>Your Login Credentials:</h3>
@@ -483,9 +488,11 @@ class EmailService:
                     <p><strong>Important:</strong> {password_instruction}</p>
                     
                     <p>If you have any questions or need assistance, please contact your institution's administration office.</p>
+                    <p><em>Powered by EduSphere</em></p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {settings.APP_NAME} for {tenant_label}</p>
+                    <p><strong>Powered by EduSphere</strong></p>
                 </div>
             </div>
         </body>
@@ -497,7 +504,7 @@ class EmailService:
         
         Dear {student_name},
         
-        Your student account has been successfully created{f' at {institution_name}' if institution_name else ''}.
+        Your student account has been successfully created for {tenant_label}.
         
         Your Login Credentials:
         Student ID: {student_id}
@@ -510,7 +517,8 @@ class EmailService:
         
         If you have any questions or need assistance, please contact your institution's administration office.
         
-        This is an automated message from {settings.APP_NAME}
+        This is an automated message from {settings.APP_NAME} for {tenant_label}
+        Powered by EduSphere
         """
         
         return html_content, text_content

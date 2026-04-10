@@ -19,6 +19,7 @@ class StudentResponse(BaseModel):
     department_id: int
     academic_year_id: int
     guardian_id: int
+    branch_id: Optional[int] = None
     photo: Optional[str] = None  # Base64 encoded photo or photo URL
     created_at: datetime
     updated_at: Optional[datetime]
@@ -36,6 +37,7 @@ class StudentRequest(BaseModel):
     class_id: int
     department_id: int
     academic_year_id: int
+    branch_id: Optional[int] = None
     institution_id: Optional[int] = None  # Optional - can be provided in request body or will use current_user.institution_id
     guardian_id: Optional[int] = None  # Optional - will be created if guardian_info is provided
     # Guardian information (optional - if provided, guardian will be created)
@@ -61,6 +63,7 @@ class StudentUpdate(BaseModel):
     department_id: Optional[int] = None
     academic_year_id: Optional[int] = None
     guardian_id: Optional[int] = None
+    branch_id: Optional[int] = None
     photo: Optional[str] = None  # Base64 encoded photo (data:image/...;base64,... format)
 
 

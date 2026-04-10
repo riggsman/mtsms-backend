@@ -38,7 +38,7 @@ class EmailLogListResponse(BaseModel):
 @router.get("/", response_model=EmailLogListResponse)
 async def get_email_logs(
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=100),
+    page_size: int = Query(50, ge=1, le=1000),
     status: Optional[str] = Query(None),
     recipient_email: Optional[str] = Query(None),
     db: Session = Depends(get_db),

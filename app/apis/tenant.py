@@ -10,6 +10,7 @@ from app.exceptions import NotFoundError, ConflictError, ValidationError
 from app.authentication.authenticator import hash_password
 from app.services.email_service import EmailService
 from app.helpers.async_helper import run_async_safe
+from app.helpers.user_roles import role_column_contains_role, user_has_role
 
 async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optional[UploadFile] = None):
     """Create a new tenant"""
@@ -76,7 +77,7 @@ async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optio
                 existing_user.password = hash_password(tenant.admin_password)
                 existing_user.must_change_password = 'true' if tenant.must_change_password else 'false'
                 existing_user.institution_id = tenant_id  # Ensure it's set correctly
-                existing_user.role = 'super_admin'
+                existing_user.role = ['super_admin']
                 existing_user.user_type = 'TENANT'
                 user_db.commit()
                 user_db.refresh(existing_user)
@@ -93,7 +94,7 @@ async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optio
                     phone='',
                     username=tenant.admin_username,
                     password=hash_password(tenant.admin_password),
-                    role='super_admin',
+                    role=['super_admin'],
                     user_type='TENANT',
                     is_active='active',
                     must_change_password='true' if tenant.must_change_password else 'false'
@@ -148,10 +149,56 @@ async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optio
         
         if not existing_settings:
             # Create new tenant_settings entry
-            new_settings = TenantSettings(institution_id=tenant_id)
+            new_settings = TenantSettings(
+                institution_id=tenant_id,
+                branches_enabled=bool(getattr(tenant, "branches_enabled", None))
+                if getattr(tenant, "branches_enabled", None) is not None
+                else False,
+            )
             settings_db.add(new_settings)
             settings_db.commit()
             settings_db.refresh(new_settings)
+        else:
+            # If settings exist, update branches_enabled only when provided.
+            if getattr(tenant, "branches_enabled", None) is not None:
+                existing_settings.branches_enabled = bool(tenant.branches_enabled)
+                settings_db.commit()
+                settings_db.refresh(existing_settings)
+
+        # If the system admin requested initial branch creation during tenant setup,
+        # create the first Branch row now (scoped to this tenant_id / institution_id).
+        try:
+            initial_branch_name = getattr(tenant, "initial_branch_name", None)
+            branches_enabled = getattr(tenant, "branches_enabled", None)
+            if bool(branches_enabled) and initial_branch_name and str(initial_branch_name).strip():
+                from app.models.branch import Branch
+
+                branch_name = str(initial_branch_name).strip()
+                existing_branch = (
+                    settings_db.query(Branch)
+                    .filter(
+                        Branch.institution_id == tenant_id,
+                        Branch.name == branch_name,
+                    )
+                    .first()
+                )
+
+                if not existing_branch:
+                    settings_db.add(
+                        Branch(
+                            institution_id=tenant_id,
+                            name=branch_name,
+                            code=None,
+                            sort_order=0,
+                            is_active=True,
+                        )
+                    )
+                    settings_db.commit()
+        except Exception as branch_err:
+            from app.helpers.logger import logger
+            logger.warning(
+                f"Could not create initial branch for tenant {tenant.name}: {branch_err}"
+            )
     except Exception as e:
         from app.helpers.logger import logger
         logger.warning(f"Could not create tenant_settings for tenant {tenant.name}: {e}")
@@ -199,7 +246,7 @@ def _add_admin_username(db: Session, tenant: Tenant) -> Tenant:
             # Use the same db session
             admin_user = db.query(User).filter(
                 User.institution_id == tenant.id,
-                User.role == 'super_admin'
+                role_column_contains_role(db.get_bind(), User.role, 'super_admin'),
             ).first()
         else:
             # Need to query tenant-specific database
@@ -209,7 +256,7 @@ def _add_admin_username(db: Session, tenant: Tenant) -> Tenant:
                 try:
                     admin_user = tenant_db.query(User).filter(
                         User.institution_id == tenant.id,
-                        User.role == 'super_admin'
+                        role_column_contains_role(tenant_db.get_bind(), User.role, 'super_admin'),
                     ).first()
                 finally:
                     tenant_db.close()
@@ -288,7 +335,42 @@ def _enrich_tenant(db: Session, tenant: Tenant) -> Tenant:
     print("OK LET US PROCEED..... Enrich tenant with admin_username and logo_url.")
     tenant = _add_admin_username(db, tenant)
     tenant = _add_logo_url(db, tenant)
+    tenant = _add_branches_enabled(db, tenant)
     print("OK LET US PROCEED..... Enrichment complete. ", tenant.logo_url)
+    return tenant
+
+
+def _add_branches_enabled(db: Session, tenant: Tenant) -> Tenant:
+    """
+    Add branches_enabled flag from tenant_settings onto the Tenant response object.
+
+    For shared mode we read from the shared database. For multi-tenant mode we
+    read from the tenant-specific database.
+    """
+    try:
+        from app.models.tenant_settings import TenantSettings
+
+        mode = get_database_mode()
+        if mode == "shared":
+            settings_db = get_shared_db()()
+            should_close = False
+        else:
+            TenantSessionLocal = get_tenant_db(tenant.name)
+            settings_db = TenantSessionLocal()
+            should_close = True
+
+        try:
+            ts = (
+                settings_db.query(TenantSettings)
+                .filter(TenantSettings.institution_id == tenant.id)
+                .first()
+            )
+            tenant.branches_enabled = bool(ts.branches_enabled) if ts else False
+        finally:
+            if should_close:
+                settings_db.close()
+    except Exception:
+        tenant.branches_enabled = False
     return tenant
 
 def get_all_tenants(
@@ -342,6 +424,17 @@ async def update_tenant(
         update_data['domain'] = tenant_update.domain
     if tenant_update.is_active is not None:
         update_data['is_active'] = tenant_update.is_active
+    if tenant_update.fee_amount is not None:
+        update_data['fee_amount'] = tenant_update.fee_amount
+    if tenant_update.fee_deadline is not None:
+        from datetime import datetime
+        try:
+            update_data['fee_deadline'] = datetime.fromisoformat(tenant_update.fee_deadline.replace('Z', '+00:00'))
+        except ValueError:
+            try:
+                update_data['fee_deadline'] = datetime.strptime(tenant_update.fee_deadline, '%Y-%m-%d')
+            except ValueError:
+                raise ValidationError("Invalid fee_deadline format. Use YYYY-MM-DD or ISO format.")
     
     # Update tenant fields - only update fields that are explicitly provided (not None)
     if update_data:
@@ -377,6 +470,40 @@ async def update_tenant(
             logo_file=logo_file,
             global_db=db  # Pass global database session
         )
+
+    # Update tenant_settings.branches_enabled if explicitly provided
+    if getattr(tenant_update, "branches_enabled", None) is not None:
+        from app.models.tenant_settings import TenantSettings
+
+        mode = get_database_mode()
+        if mode == "shared":
+            settings_db = get_shared_db()()
+            should_close_settings = False
+        else:
+            TenantSessionLocal = get_tenant_db(tenant.name)
+            settings_db = TenantSessionLocal()
+            should_close_settings = True
+
+        try:
+            existing_settings = settings_db.query(TenantSettings).filter(
+                TenantSettings.institution_id == tenant_id
+            ).first()
+
+            if existing_settings:
+                existing_settings.branches_enabled = bool(tenant_update.branches_enabled)
+                settings_db.commit()
+                settings_db.refresh(existing_settings)
+            else:
+                new_settings = TenantSettings(
+                    institution_id=tenant_id,
+                    branches_enabled=bool(tenant_update.branches_enabled),
+                )
+                settings_db.add(new_settings)
+                settings_db.commit()
+                settings_db.refresh(new_settings)
+        finally:
+            if should_close_settings:
+                settings_db.close()
     
     # Enrich tenant with admin_username and logo_url before returning
     tenant = _enrich_tenant(db, tenant)
@@ -408,7 +535,7 @@ async def _update_admin_user(
         # Find existing admin user for this tenant
         admin_user = user_db.query(User).filter(
             User.institution_id == tenant_id,
-            User.role == 'super_admin'
+            role_column_contains_role(user_db.get_bind(), User.role, 'super_admin'),
         ).first()
         
         if admin_user:
@@ -443,8 +570,8 @@ async def _update_admin_user(
                     has_changes = True
             
             # Ensure role and user_type are correct (always set these)
-            if admin_user.role != 'super_admin':
-                admin_user.role = 'super_admin'
+            if not user_has_role(admin_user, 'super_admin'):
+                admin_user.role = ['super_admin']
                 has_changes = True
             if admin_user.user_type != 'TENANT':
                 admin_user.user_type = 'TENANT'
@@ -479,7 +606,7 @@ async def _update_admin_user(
                     phone='',
                     username=admin_username,
                     password=hash_password(admin_password),
-                    role='super_admin',
+                    role=['super_admin'],
                     user_type='TENANT',
                     is_active='active',
                     must_change_password='true' if (must_change_password is True) else 'false'

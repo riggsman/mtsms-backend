@@ -3,11 +3,23 @@ from typing import List, Optional
 from app.models.teacher import Teacher
 from app.models.user import User
 from app.schemas.teachers import TeacherRequest, TeacherResponse, TeacherUpdate
-from app.exceptions import NotFoundError, ConflictError
+from app.exceptions import NotFoundError, ConflictError, ValidationError
 from app.helpers.pagination import paginate_query
 from app.helpers.activity_logger import log_create_activity, log_update_activity, log_delete_activity, get_user_display_name
 from app.services.email_service import EmailService
 from app.helpers.async_helper import run_async_safe
+
+
+def teacher_to_response(db: Session, teacher: Teacher) -> TeacherResponse:
+    """Build TeacherResponse including login username from linked User (matched by email)."""
+    linked = db.query(User).filter(
+        User.email == teacher.email,
+        User.deleted_at.is_(None),
+    ).first()
+    un = linked.username if linked else None
+    base = TeacherResponse.model_validate(teacher)
+    return base.model_copy(update={"username": un})
+
 
 def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[User] = None) -> Teacher:
     """Create a new teacher and automatically create a user account with staff role"""
@@ -38,9 +50,12 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
     if existing_user:
         raise ConflictError(f"User with email {teacher.email} already exists. Please use a different email.")
     
-    # Create teacher record
-    teacher_dict = teacher.dict(exclude={'institution_id'})
+    # Create teacher record (username lives on User, not Teacher)
+    teacher_dict = teacher.dict(exclude={'institution_id', 'designation', 'title', 'username'})
+    teacher_dict['position'] = teacher.position or getattr(teacher, 'designation', None) or getattr(teacher, 'title', None)
     teacher_dict['institution_id'] = institution_id
+    if 'branch_id' not in teacher_dict:
+        teacher_dict['branch_id'] = getattr(teacher, 'branch_id', None)
     new_teacher = Teacher(**teacher_dict)
     db.add(new_teacher)
     db.flush()  # Flush to get the teacher ID
@@ -49,12 +64,22 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
     default_password = teacher.employee_id or teacher.email.split('@')[0]
     hashed_password = hash_password(default_password)
     
-    # Generate username from email
-    username = teacher.email.split('@')[0]
+    # Login username: optional on request, else email local-part
+    raw_username = getattr(teacher, 'username', None) or teacher.email.split('@')[0]
+    username = (raw_username or '').strip() or teacher.email.split('@')[0]
+    existing_un = db.query(User).filter(
+        User.username == username,
+        User.deleted_at.is_(None),
+    ).first()
+    if existing_un:
+        raise ConflictError(f"Username '{username}' is already taken")
     
     # Create user account with staff role
     new_user = User(
         institution_id=institution_id,
+        branch_id=getattr(teacher, 'branch_id', None),
+        department_id=getattr(teacher, 'department_id', None),
+        position=teacher_dict.get('position'),
         firstname=teacher.firstname,
         lastname=teacher.lastname,
         middlename=teacher.middlename or '',
@@ -64,7 +89,7 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
         phone=teacher.phone or '',
         username=username,
         password=hashed_password,
-        role='staff',  # Automatically set to staff role
+        role=['staff'],  # Automatically set to staff role
         user_type='TENANT',  # Teachers are always TENANT users
         is_active='active',
         must_change_password='true'  # Force password change on first login
@@ -122,7 +147,8 @@ def get_teachers(
     skip: int = 0,
     limit: int = 10,
     institution_id: Optional[int] = None,
-    department_id: Optional[int] = None
+    department_id: Optional[int] = None,
+    branch_id: Optional[int] = None,
 ) -> tuple[List[Teacher], int]:
     """Get list of teachers with pagination"""
     query = db.query(Teacher).filter(Teacher.deleted_at.is_(None))
@@ -132,6 +158,8 @@ def get_teachers(
     
     if department_id:
         query = query.filter(Teacher.department_id == department_id)
+    if branch_id is not None:
+        query = query.filter(Teacher.branch_id == branch_id)
     
     return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
 
@@ -141,6 +169,16 @@ def update_teacher(db: Session, teacher_id: int, teacher_update: TeacherUpdate, 
     teacher = get_teacher(db, teacher_id)
     
     update_data = teacher_update.dict(exclude_unset=True)
+    new_username = update_data.pop("username", None)
+
+    # Normalize position aliases used by frontend payloads.
+    if "position" not in update_data:
+        if update_data.get("designation"):
+            update_data["position"] = update_data["designation"]
+        elif update_data.get("title"):
+            update_data["position"] = update_data["title"]
+    update_data.pop("designation", None)
+    update_data.pop("title", None)
     
     # Check email uniqueness if being updated
     if "email" in update_data:
@@ -151,8 +189,50 @@ def update_teacher(db: Session, teacher_id: int, teacher_update: TeacherUpdate, 
         if existing:
             raise ConflictError(f"Teacher with email {update_data['email']} already exists")
     
+    # Check employee_id uniqueness if being updated
+    if "employee_id" in update_data and update_data["employee_id"] != teacher.employee_id:
+        existing_emp = db.query(Teacher).filter(
+            Teacher.employee_id == update_data["employee_id"],
+            Teacher.id != teacher_id
+        ).first()
+        if existing_emp:
+            raise ConflictError(f"Teacher with employee_id {update_data['employee_id']} already exists")
+    
+    old_email = teacher.email
     for field, value in update_data.items():
         setattr(teacher, field, value)
+
+    # Keep linked staff user in sync with lecturer edits.
+    linked_user = db.query(User).filter(User.email == old_email, User.deleted_at.is_(None)).first()
+    if linked_user:
+        if "email" in update_data and update_data["email"]:
+            linked_user.email = update_data["email"]
+        if "firstname" in update_data:
+            linked_user.firstname = update_data["firstname"]
+        if "lastname" in update_data:
+            linked_user.lastname = update_data["lastname"]
+        if "middlename" in update_data:
+            linked_user.middlename = update_data["middlename"] or ''
+        if "phone" in update_data:
+            linked_user.phone = update_data["phone"] or ''
+        if "branch_id" in update_data:
+            linked_user.branch_id = update_data["branch_id"]
+        if "department_id" in update_data:
+            linked_user.department_id = update_data["department_id"]
+        if "position" in update_data:
+            linked_user.position = update_data["position"]
+        if new_username is not None:
+            un = new_username.strip()
+            if not un:
+                raise ValidationError("Username cannot be empty")
+            other = db.query(User).filter(
+                User.username == un,
+                User.id != linked_user.id,
+                User.deleted_at.is_(None),
+            ).first()
+            if other:
+                raise ConflictError(f"Username '{un}' is already taken")
+            linked_user.username = un
     
     db.commit()
     db.refresh(teacher)

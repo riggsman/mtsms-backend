@@ -13,6 +13,13 @@ from app.dependencies.auth import get_current_user_tenant, require_any_role, req
 from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.branch_scope import effective_branch_scope_id
+from app.helpers.user_roles import (
+    role_string_for_legacy,
+    user_can_manage_other_users_passwords,
+    user_is_system_admin,
+    user_roles_list,
+)
 
 user = APIRouter()
 
@@ -37,7 +44,7 @@ def get_user_endpoint(
 @user.get("/users", response_model=PaginatedResponse[UserResponse])
 def list_users(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     role: Optional[str] = Query(None),
     exclude_role: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -51,20 +58,23 @@ def list_users(
     # Tenant users must filter by their institution_id
     institution_id = None
     if current_user:
-        is_system_admin = current_user.role and current_user.role.startswith('system_')
+        is_system_admin = user_is_system_admin(current_user)
         if not is_system_admin:
             institution_id = current_user.institution_id
             if not institution_id:
                 from app.exceptions import ValidationError
                 raise ValidationError("User must belong to an institution to view users")
     
+    branch_scope = effective_branch_scope_id(db, current_user)
+
     users, total = get_users(
         db=db,
         skip=skip,
         limit=page_size,
         role=role,
         exclude_role=exclude_role,
-        institution_id=institution_id
+        institution_id=institution_id,
+        branch_id=branch_scope,
     )
     
     # Fix invalid datetime values (MySQL zero dates) before Pydantic serialization
@@ -75,6 +85,10 @@ def list_users(
         user_dict = {
             'id': user_obj.id,
             'institution_id': user_obj.institution_id,
+            'department_id': getattr(user_obj, 'department_id', None),
+            'position': getattr(user_obj, 'position', None),
+            'designation': getattr(user_obj, 'position', None),
+            'title': getattr(user_obj, 'position', None),
             'firstname': user_obj.firstname,
             'middlename': user_obj.middlename,
             'lastname': user_obj.lastname,
@@ -83,12 +97,14 @@ def list_users(
             'email': user_obj.email,
             'phone': user_obj.phone,
             'username': user_obj.username,
-            'role': user_obj.role,
+            'roles': user_roles_list(user_obj),
+            'role': role_string_for_legacy(user_obj),
             'user_type': getattr(user_obj, 'user_type', 'TENANT'),
             'is_active': user_obj.is_active,
             'must_change_password': getattr(user_obj, 'must_change_password', 'false'),
             'profile_picture': getattr(user_obj, 'profile_picture', None),
             'language': getattr(user_obj, 'language', 'en') or 'en',
+            'branch_id': getattr(user_obj, 'branch_id', None),
             'created_at': None if (user_obj.created_at is None or 
                                    (isinstance(user_obj.created_at, datetime) and user_obj.created_at.year == 0)) 
                             else user_obj.created_at,
@@ -109,7 +125,7 @@ def list_users(
 @user.get("/admin/users", response_model=PaginatedResponse[UserResponse])
 def list_users(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     role: Optional[str] = Query(None),
     db: Session = Depends(get_db_for_admin),
     current_user: User = Depends(require_any_role_admin(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
@@ -131,6 +147,10 @@ def list_users(
         user_dict = {
             'id': user.id,
             'institution_id': user.institution_id,
+            'department_id': getattr(user, 'department_id', None),
+            'position': getattr(user, 'position', None),
+            'designation': getattr(user, 'position', None),
+            'title': getattr(user, 'position', None),
             'firstname': user.firstname,
             'middlename': user.middlename,
             'lastname': user.lastname,
@@ -139,12 +159,14 @@ def list_users(
             'email': user.email,
             'phone': user.phone,
             'username': user.username,
-            'role': user.role,
+            'roles': user_roles_list(user),
+            'role': role_string_for_legacy(user),
             'user_type': user.user_type,
             'is_active': user.is_active,
             'must_change_password': user.must_change_password,
             'profile_picture': getattr(user, 'profile_picture', None),
             'language': getattr(user, 'language', 'en') or 'en',
+            'branch_id': getattr(user, 'branch_id', None),
             'created_at': None if (user.created_at is None or 
                                    (isinstance(user.created_at, datetime) and user.created_at.year == 0)) 
                             else user.created_at,
@@ -205,9 +227,7 @@ def change_password_endpoint(
 ):
     """Change user password (for first-time login or regular password change)"""
     # Users can only change their own password unless they're admin or system admin
-    is_admin = (current_user.role == UserRole.ADMIN.value or 
-                current_user.role == UserRole.SUPER_ADMIN.value or
-                (current_user.role and current_user.role.startswith('system_')))
+    is_admin = user_can_manage_other_users_passwords(current_user)
     if not is_admin:
         if current_user.id != user_id:
             from fastapi import HTTPException, status
@@ -284,6 +304,10 @@ def update_my_language(
     user_dict = {
         'id': current_user.id,
         'institution_id': current_user.institution_id,
+        'department_id': getattr(current_user, 'department_id', None),
+        'position': getattr(current_user, 'position', None),
+        'designation': getattr(current_user, 'position', None),
+        'title': getattr(current_user, 'position', None),
         'firstname': current_user.firstname,
         'middlename': current_user.middlename,
         'lastname': current_user.lastname,
@@ -292,7 +316,8 @@ def update_my_language(
         'email': current_user.email,
         'phone': current_user.phone,
         'username': current_user.username,
-        'role': current_user.role,
+        'roles': user_roles_list(current_user),
+        'role': role_string_for_legacy(current_user),
         'user_type': getattr(current_user, 'user_type', 'TENANT'),
         'is_active': current_user.is_active,
         'must_change_password': getattr(current_user, 'must_change_password', 'false'),

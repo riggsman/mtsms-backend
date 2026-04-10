@@ -13,13 +13,14 @@ from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import primary_role
 
 announcement_router = APIRouter()
 
 @announcement_router.get("/announcements", response_model=PaginatedResponse[AnnouncementResponse])
 def list_announcements(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=10000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
@@ -32,9 +33,8 @@ def list_announcements(
         )
     
     skip = (page - 1) * page_size
-    # Get user role for filtering
-    user_role = current_user.role if current_user.role else None
-    # Normalize role names (remove "system_" prefix if present)
+    # Primary role for filtering (multi-role users)
+    user_role = primary_role(current_user) or None
     if user_role and user_role.startswith("system_"):
         user_role = user_role.replace("system_", "")
     

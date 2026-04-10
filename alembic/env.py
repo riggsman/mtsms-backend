@@ -19,6 +19,10 @@ from app.conf.config import settings
 # Models using DefaultBase (global database)
 from app.models.tenant import Tenant
 from app.models.system_config import SystemConfig
+from app.models.system_settings import SystemSettings
+from app.models.contact_message import ContactMessage
+from app.models.subscription_service import SubscriptionService
+from app.models.service_configuration import ServiceConfiguration
 
 # Models using BaseModel_Base (tenant/shared database)
 from app.models.department import Department
@@ -26,11 +30,12 @@ from app.models.academic_year import AcademicYear
 from app.models.guardian import Guardian
 from app.models.course import Course
 from app.models.schedule import Schedule
+from app.models.branch import Branch  # before Student: FK students.branch_id -> branches.id
 from app.models.student import Student
 from app.models.teacher import Teacher
 from app.models.user import User
 from app.models.complaint import Complaint
-from app.models.assignment import Assignment
+from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.student_record import StudentRecord
 from app.models.enrollment import Enrollment
 from app.models.note import Note
@@ -38,6 +43,13 @@ from app.models.announcement import Announcement
 from app.models.activity import Activity
 from app.models.tenant_settings import TenantSettings
 from app.models.email_log import EmailLog
+from app.models.payment import Payment
+from app.models.schedule_reminder import ScheduleReminder
+from app.models.user_reminder_dismissal import UserReminderDismissal
+import alembic.autogenerate as autogenerate
+from alembic.operations import ops
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 
 # Import Class model (class is a reserved keyword)
 import importlib
@@ -46,6 +58,7 @@ _class_module = importlib.import_module('app.models.class')
 # Combine metadata from both bases into a single metadata object
 # This allows Alembic to detect all tables from both bases
 from sqlalchemy import MetaData
+
 
 # Create a combined metadata object
 combined_metadata = MetaData()
@@ -78,6 +91,49 @@ if config.config_file_name is not None:
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
+
+
+def sort_drop_operations(directives):
+    for directive in directives:
+        drop_indexes = []
+        drop_tables = []
+        others = []
+
+        if not hasattr(directive,'ops'):
+            continue
+        # drop_indexes = []
+        # drop_tables = []
+        # others = []
+
+        ops_list = directive.ops
+
+        # for op in ops_list:
+        #     if isinstance(op,ops.DropIndexOp):
+        #         drop_indexes.append(op)
+        #     elif isinstance(op,ops.DropTableOp):
+        #         drop_tables.append(op)
+        #     else:
+        #         others.append(op)
+        for op in directive.ops:
+            if isinstance(op,ops.DropIndexOp):
+                drop_indexes.append(op)
+            elif isinstance(op,ops.DropTableOp):
+                drop_tables.append(op)
+            else:
+                others.append(op)
+    directive.ops = drop_indexes + others + drop_tables
+
+def process_revision_directives(
+    context:MigrationContext,
+    revision: tuple,
+    directives: list
+) -> None :
+    if not context.config.cmd_opts.autogenerate:
+        return
+
+    sort_drop_operations(directives)
+
+
 
 
 def run_migrations_offline() -> None:
@@ -125,7 +181,12 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         context.configure(
             connection=connection, 
-            target_metadata=target_metadata
+            target_metadata=target_metadata,
+            # process_revision_directives = process_revision_directives,
+            process_revision_directives=lambda ctx, rev, dirs: sort_drop_operations(dirs),
+            render_as_batch = True,
+            compare_type=True,
+            compare_server_default=True
         )
 
         with context.begin_transaction():

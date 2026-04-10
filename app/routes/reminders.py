@@ -24,7 +24,7 @@ reminder_router = APIRouter()
 @reminder_router.get("/reminders/status", response_model=PaginatedResponse[ReminderStatusResponse])
 def get_reminder_status(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=200),
     institution_id: Optional[int] = Query(None, alias="institution_id"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
@@ -116,15 +116,17 @@ def get_reminder_status(
             reminder_sent_at=instructor_reminder.sent_at if instructor_reminder else None
         ))
     
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
     return PaginatedResponse(
         items=items,
         total=total,
         page=page,
-        page_size=page_size
+        page_size=page_size,
+        total_pages=total_pages
     )
 
 
-@reminder_router.get("/reminders/my", response_model=List[UserReminderResponse])
+@reminder_router.get("/reminders/my") #List[UserReminderResponse]
 def get_my_reminders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
@@ -143,6 +145,7 @@ def get_my_reminders(
             ScheduleReminder.institution_id == current_user.institution_id
         )
     ).order_by(ScheduleReminder.class_start_time.asc()).all()
+
     
     # Get dismissed reminder IDs
     from app.models.user_reminder_dismissal import UserReminderDismissal
@@ -151,34 +154,34 @@ def get_my_reminders(
     ).all()
     dismissed_ids_set = {r[0] for r in dismissed_ids}
     
-    # Build response with schedule details
-    items = []
-    for reminder_obj in reminders:
-        schedule = db.query(Schedule).filter(
-            and_(
-                Schedule.id == reminder_obj.schedule_id,
-                Schedule.deleted_at.is_(None)
-            )
-        ).first()
-        if not schedule:
-            continue
+    # # Build response with schedule details
+    # items = []
+    # for reminder_obj in reminders:
+    #     schedule = db.query(Schedule).filter(
+    #         and_(
+    #             Schedule.id == reminder_obj.schedule_id,
+    #             Schedule.deleted_at.is_(None)
+    #         )
+    #     ).first()
+    #     if not schedule:
+    #         continue
         
-        items.append(UserReminderResponse(
-            id=reminder_obj.id,
-            schedule_id=reminder_obj.schedule_id,
-            course_name=schedule.course_name,
-            instructor=schedule.instructor,
-            day=schedule.day,
-            start_time=schedule.start_time,
-            end_time=schedule.end_time,
-            room=schedule.room,
-            class_start_time=reminder_obj.class_start_time,
-            reminder_time=reminder_obj.reminder_time,
-            is_dismissed=reminder_obj.id in dismissed_ids_set
-        ))
+    #     items.append(UserReminderResponse(
+    #         id=reminder_obj.id,
+    #         schedule_id=reminder_obj.schedule_id,
+    #         course_name=schedule.course_name,
+    #         instructor=schedule.instructor,
+    #         day=schedule.day,
+    #         start_time=schedule.start_time,
+    #         end_time=schedule.end_time,
+    #         room=schedule.room,
+    #         class_start_time=reminder_obj.class_start_time,
+    #         reminder_time=reminder_obj.reminder_time,
+    #         is_dismissed=reminder_obj.id in dismissed_ids_set
+    #     ))
     
-    return items
-
+    # return items
+    print("REMINDER COUNT",dismissed_ids)
 
 @reminder_router.post("/reminders/dismiss")
 def dismiss_reminder(

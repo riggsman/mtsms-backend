@@ -16,6 +16,7 @@ from app.dependencies.auth import get_current_user, require_any_role_admin
 from app.models.user import User
 from app.models.role import UserRole
 from app.conf.config import settings
+from app.helpers.user_roles import user_has_role, user_is_tenant_super_admin_or_system
 
 system_config = APIRouter()
 
@@ -27,9 +28,7 @@ def get_database_mode_endpoint(
     Get the current database architecture mode.
     Only accessible by super_admin.
     """
-    # Check if user is super_admin or system_super_admin
-    if (current_user.role != UserRole.SUPER_ADMIN.value and 
-        not (current_user.role and current_user.role.startswith('system_'))):
+    if not user_is_tenant_super_admin_or_system(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only super_admin or system_super_admin can access system configuration"
@@ -57,8 +56,7 @@ def update_database_mode_endpoint(
     
     WARNING: Changing modes may require data migration!
     """
-    # Check if user is super_admin
-    if current_user.role != UserRole.SUPER_ADMIN.value:
+    if not user_has_role(current_user, UserRole.SUPER_ADMIN.value):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only super_admin can update system configuration"
@@ -97,7 +95,7 @@ def get_system_config(
     Get a system configuration value by key.
     Only accessible by super_admin.
     """
-    if current_user.role != UserRole.SUPER_ADMIN.value:
+    if not user_has_role(current_user, UserRole.SUPER_ADMIN.value):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only super_admin can access system configuration"
@@ -124,7 +122,7 @@ def update_system_config(
     Update a system configuration value.
     Only accessible by super_admin.
     """
-    if current_user.role != UserRole.SUPER_ADMIN.value:
+    if not user_has_role(current_user, UserRole.SUPER_ADMIN.value):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only super_admin can update system configuration"

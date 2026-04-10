@@ -11,6 +11,7 @@ from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import role_string_for_legacy, user_requires_tenant_scope_for_data
 
 complaint = APIRouter()
 
@@ -95,14 +96,14 @@ def get_complaint_endpoint(
 ):
     """Get a complaint by ID"""
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     return get_complaint(db=db, complaint_id=complaint_id, institution_id=institution_id)
 
 @complaint.get("/complaints", response_model=PaginatedResponse[ComplaintResponse])
 def list_complaints(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=10000),
     student_id: Optional[str] = Query(None),
     complaint_type: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
@@ -112,7 +113,7 @@ def list_complaints(
     """Get list of complaints with pagination (admin/staff/secretary only)"""
     skip = (page - 1) * page_size
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     complaints, total = get_complaints(
         db=db,
@@ -138,7 +139,7 @@ def get_student_complaints_endpoint(
 ):
     """Get all complaints for a specific student"""
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     return get_student_complaints(db=db, student_id=student_id, institution_id=institution_id)
 
@@ -155,10 +156,10 @@ def update_complaint_endpoint(
         if not complaint_update.resolved_by:
             complaint_update.resolved_by = f"{current_user.firstname} {current_user.lastname}"
         if not complaint_update.resolver_role:
-            complaint_update.resolver_role = current_user.role
+            complaint_update.resolver_role = role_string_for_legacy(current_user)
     
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     return update_complaint(db=db, complaint_id=complaint_id, complaint_update=complaint_update, institution_id=institution_id)
 
@@ -170,7 +171,7 @@ def delete_complaint_endpoint(
 ):
     """Delete a complaint (soft delete)"""
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     delete_complaint(db=db, complaint_id=complaint_id, institution_id=institution_id)
     return None

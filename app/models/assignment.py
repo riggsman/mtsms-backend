@@ -4,10 +4,10 @@ import datetime
 
 class Assignment(BaseModel_Base):
     __tablename__ = "assignments"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
-    lecturer_id = Column(Integer, nullable=True, index=True)  # Link to teacher/lecturer
-    course_code = Column(String(50), nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
+    lecturer_id = Column(Integer, nullable=True)  # Link to teacher/lecturer
+    course_code = Column(String(50), nullable=False)
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     due_date = Column(Date, nullable=False)
@@ -21,10 +21,10 @@ class Assignment(BaseModel_Base):
 
 class AssignmentSubmission(BaseModel_Base):
     __tablename__ = "assignment_submissions"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
-    assignment_id = Column(Integer, nullable=False, index=True)
-    student_id = Column(String(70), nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
+    assignment_id = Column(Integer, nullable=False)
+    student_id = Column(String(70), nullable=False)
     submission_file = Column(Text, nullable=True)  # File URL/path (files saved to filesystem)
     submission_date = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     status = Column(String(50), default="submitted", nullable=False)  # submitted, late, graded

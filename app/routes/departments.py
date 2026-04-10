@@ -11,6 +11,7 @@ from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import user_is_system_admin
 
 department_router = APIRouter()
 
@@ -44,7 +45,7 @@ def get_department_endpoint(
 @department_router.get("/departments", response_model=PaginatedResponse[DepartmentResponse])
 def list_departments(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
@@ -54,7 +55,7 @@ def list_departments(
     # Determine institution_id for filtering
     institution_id = None
     if current_user:
-        is_system_admin = current_user.role and current_user.role.startswith('system_')
+        is_system_admin = user_is_system_admin(current_user)
         if not is_system_admin:
             institution_id = current_user.institution_id
             if not institution_id:

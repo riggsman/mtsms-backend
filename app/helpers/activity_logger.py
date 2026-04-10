@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.apis.activity import log_activity
 from app.models.user import User
 from typing import Optional
+from app.helpers.user_roles import role_string_for_legacy
 
 def get_user_display_name(user: User) -> str:
     """Get display name for a user"""
@@ -44,7 +45,7 @@ def log_create_activity(
         entity_type=entity_type,
         entity_id=entity_id,
         performed_by=get_user_display_name(current_user),
-        performer_role=current_user.role or "Unknown",
+        performer_role=role_string_for_legacy(current_user) or "Unknown",
         performer_id=current_user.id,
         content=content
     )
@@ -75,7 +76,7 @@ def log_update_activity(
         entity_type=entity_type,
         entity_id=entity_id,
         performed_by=get_user_display_name(current_user),
-        performer_role=current_user.role or "Unknown",
+        performer_role=role_string_for_legacy(current_user) or "Unknown",
         performer_id=current_user.id,
         content=content
     )
@@ -106,7 +107,7 @@ def log_delete_activity(
         entity_type=entity_type,
         entity_id=entity_id,
         performed_by=get_user_display_name(current_user),
-        performer_role=current_user.role or "Unknown",
+        performer_role=role_string_for_legacy(current_user) or "Unknown",
         performer_id=current_user.id,
         content=content
     )

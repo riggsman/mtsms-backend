@@ -15,6 +15,7 @@ from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import user_is_system_admin
 
 assignment = APIRouter()
 
@@ -26,7 +27,7 @@ def create_assignment_endpoint(
 ):
     """Create a new assignment"""
     # Set institution_id from current_user if not provided in request
-    is_system_admin = current_user.role and current_user.role.startswith("system_")
+    is_system_admin = user_is_system_admin(current_user)
     institution_id = current_user.institution_id
     if is_system_admin:
         institution_id = assignment_data.institution_id or institution_id
@@ -39,7 +40,7 @@ def create_assignment_endpoint(
 @assignment.get("/assignments", response_model=PaginatedResponse[AssignmentResponse])
 def list_assignments(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=10000),
     course_code: Optional[str] = Query(None),
     lecturer_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
@@ -53,7 +54,7 @@ def list_assignments(
     # Tenant users must filter by their institution_id
     institution_id = None
     if current_user:
-        is_system_admin = current_user.role and current_user.role.startswith('system_')
+        is_system_admin = user_is_system_admin(current_user)
         if not is_system_admin:
             institution_id = current_user.institution_id
             if not institution_id:

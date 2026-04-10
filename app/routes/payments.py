@@ -30,6 +30,7 @@ from app.dependencies.institutionDependency import get_institution_id_from_heade
 from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import user_has_role, user_is_system_admin, user_requires_tenant_scope_for_data
 
 payment = APIRouter()
 
@@ -46,7 +47,7 @@ def initiate_payment_endpoint(
     Students can initiate their own payments
     """
     # Students can only initiate payments for themselves
-    if current_user.role == UserRole.STUDENT.value:
+    if user_has_role(current_user, UserRole.STUDENT.value):
         # Verify the payment is for the current student
         from app.models.student import Student
         student = db.query(Student).filter(
@@ -100,7 +101,7 @@ def verify_payment_endpoint(
     )
     
     # Students can only verify their own payments
-    if current_user.role == UserRole.STUDENT.value:
+    if user_has_role(current_user, UserRole.STUDENT.value):
         if result.payment.student_email != current_user.email:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -113,7 +114,7 @@ def verify_payment_endpoint(
 @payment.get("/payments/my", response_model=PaginatedResponse[PaymentResponse])
 def get_my_payments(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     status: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
@@ -121,7 +122,7 @@ def get_my_payments(
     """
     Get current user's payments (for students)
     """
-    if current_user.role != UserRole.STUDENT.value:
+    if not user_has_role(current_user, UserRole.STUDENT.value):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This endpoint is only available for students"
@@ -177,7 +178,7 @@ def get_receipt_endpoint(
     Students can only view their own receipts
     """
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     
     payment = get_payment_by_receipt(
@@ -187,7 +188,7 @@ def get_receipt_endpoint(
     )
     
     # Students can only view their own receipts
-    if current_user.role == UserRole.STUDENT.value:
+    if user_has_role(current_user, UserRole.STUDENT.value):
         if payment.student_email != current_user.email:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -200,7 +201,7 @@ def get_receipt_endpoint(
 @payment.get("/payments", response_model=PaginatedResponse[PaymentResponse])
 def list_payments(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     student_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
@@ -215,7 +216,7 @@ def list_payments(
     skip = (page - 1) * page_size
     
     # Validate institution_id
-    is_system_admin = current_user.role and current_user.role.startswith('system_')
+    is_system_admin = user_is_system_admin(current_user)
     institution_id = None
     
     if is_system_admin:
@@ -301,13 +302,13 @@ def get_payment_endpoint(
     Students can only view their own payments
     """
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     
     payment = get_payment(db=db, payment_id=payment_id, institution_id=institution_id)
     
     # Students can only view their own payments
-    if current_user.role == UserRole.STUDENT.value:
+    if user_has_role(current_user, UserRole.STUDENT.value):
         if payment.student_email != current_user.email:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -329,7 +330,7 @@ def update_payment_endpoint(
     Update a payment (Admin/Staff only)
     """
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     
     updated_payment = update_payment(
@@ -354,7 +355,7 @@ def delete_payment_endpoint(
     Delete a payment (soft delete) - Admin/Super Admin only
     """
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     
     delete_payment(db=db, payment_id=payment_id, current_user=current_user, institution_id=institution_id)

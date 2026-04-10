@@ -11,13 +11,22 @@ class SystemSettings(DefaultBase):
 
     __tablename__ = "system_settings"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
 
     maintenance_mode = Column(Boolean, default=False, nullable=False)
     allow_new_registrations = Column(Boolean, default=True, nullable=False)
     max_tenants = Column(Integer, default=100, nullable=False)
     session_timeout = Column(Integer, default=30, nullable=False)
     email_notifications = Column(Boolean, default=True, nullable=False)
+
+    # Caching and inactivity configuration (in minutes)
+    cache_timeout = Column(Integer, default=5, nullable=False)
+    inactivity_timeout = Column(Integer, default=5, nullable=False)
+    maintenance_check_interval = Column(Integer, default=60, nullable=False)
+    
+    # Token expiration configuration
+    access_token_expire_minutes = Column(Integer, default=60, nullable=False)
+    refresh_token_expire_days = Column(Integer, default=1, nullable=False)
 
     # Firebase Cloud Messaging configuration for push notifications
     firebase_messaging_enabled = Column(Boolean, default=False, nullable=False)

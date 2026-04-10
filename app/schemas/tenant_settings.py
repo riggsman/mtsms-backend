@@ -19,6 +19,7 @@ class MatriculeFormatConfig(BaseModel):
 class TenantSettingsRequest(BaseModel):
     matricule_format: Optional[MatriculeFormatConfig] = None
     email_reminder_time: Optional[int] = None  # Minutes before class to send reminder
+    branches_enabled: Optional[bool] = None  # Multi-campus mode
 
 class TenantSettingsResponse(BaseModel):
     id: int
@@ -27,8 +28,11 @@ class TenantSettingsResponse(BaseModel):
     is_matricule_format_set: bool = False  # Flag to indicate if matricule format is configured
     logo: Optional[str] = None  # Path to tenant logo file
     email_reminder_time: Optional[int] = 30  # Minutes before class to send reminder (default: 30)
+    branches_enabled: bool = False
+    category: str
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
 
     class Config:
         from_attributes = True
@@ -46,7 +50,9 @@ class TenantSettingsResponse(BaseModel):
                 'matricule_format': getattr(data, 'matricule_format', None),
                 'is_matricule_format_set': getattr(data, 'is_matricule_format_set', False),
                 'logo': getattr(data, 'logo', None),
+                'category': getattr(data, 'category', None),
                 'email_reminder_time': getattr(data, 'email_reminder_time', 30),
+                'branches_enabled': getattr(data, 'branches_enabled', False),
                 'created_at': getattr(data, 'created_at', None),
                 'updated_at': getattr(data, 'updated_at', None)
             }

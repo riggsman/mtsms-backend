@@ -80,7 +80,7 @@ def test_admin_user(db):
         phone="+1234567890",
         username="admin",
         password=hash_password("admin123"),
-        role="admin",
+        role=["admin"],
         is_active="active",
         gender="Male",
         address="Test Address"
@@ -101,7 +101,7 @@ def test_staff_user(db):
         phone="+1234567891",
         username="staff",
         password=hash_password("staff123"),
-        role="staff",
+        role=["staff"],
         is_active="active",
         gender="Female",
         address="Test Address"

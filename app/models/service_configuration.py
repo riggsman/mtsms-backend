@@ -11,13 +11,13 @@ class ServiceConfiguration(DefaultBase):
 
     __tablename__ = "service_configurations"
 
-    id = Column(Integer, primary_key=True, index=True)
-    service_name = Column(String(200), nullable=False, index=True)
-    configuration_key = Column(String(200), nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    service_name = Column(String(200), nullable=False)
+    configuration_key = Column(String(200), nullable=False)
     configuration_value = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)  # NULL = global config
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)  # NULL = global config
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,

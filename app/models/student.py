@@ -1,11 +1,12 @@
-from sqlalchemy import Column, String, Integer, DateTime
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey
 from app.database.sessionManager import BaseModel_Base
 import datetime
 
 class Student(BaseModel_Base):
     __tablename__ = "students"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
     firstname = Column(String(70), nullable=False)
     middlename = Column(String(200), nullable=True)
     lastname = Column(String(70), nullable=False)

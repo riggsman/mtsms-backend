@@ -9,7 +9,7 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # Database Configuration
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "mysql+pymysql://root@localhost:3306/global")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "mysql+pymysql://root@localhost:3306/mtsms")  #3306
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")

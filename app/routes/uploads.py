@@ -18,6 +18,7 @@ from app.schemas.tenant_settings import TenantSettingsResponse
 from app.schemas.users import UserResponse
 import os
 from pathlib import Path
+from app.helpers.user_roles import user_is_system_admin
 
 upload_router = APIRouter()
 
@@ -167,7 +168,7 @@ async def upload_user_profile_picture_endpoint(
     target_user = get_user(db=db, user_id=user_id)
     
     # Check if admin is trying to upload for a user from a different institution
-    if not current_user.role.startswith('system_'):
+    if not user_is_system_admin(current_user):
         if target_user.institution_id != current_user.institution_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -214,7 +215,7 @@ def delete_user_profile_picture_endpoint(
     target_user = get_user(db=db, user_id=user_id)
     
     # Check if admin is trying to delete for a user from a different institution
-    if not current_user.role.startswith('system_'):
+    if not user_is_system_admin(current_user):
         if target_user.institution_id != current_user.institution_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

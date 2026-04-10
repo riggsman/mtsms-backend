@@ -4,8 +4,8 @@ import datetime
 
 class Announcement(BaseModel_Base):
     __tablename__ = "announcements"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
     title = Column(String(200), nullable=False)
     content = Column(Text, nullable=False)
     target_audience = Column(String(20), nullable=False, default="all")  # "students", "staff", or "all"

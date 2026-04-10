@@ -108,3 +108,29 @@ The following package has been installed:
 - Email failures won't break the registration/password change process
 - Email errors are logged for debugging
 - Emails include both HTML and plain text versions for compatibility
+
+
+User Request
+     │
+     ▼
+API
+     │
+Check Redis Lock
+     │
+ ┌───┴─────┐
+ │         │
+LOCKED   NOT LOCKED
+ │         │
+Reject   Create Request
+           │
+           ▼
+      Send Provider
+           │
+           ▼
+        RabbitMQ
+           │
+           ▼
+   Worker processes status
+           │
+           ▼
+   Update DB + Release Lock

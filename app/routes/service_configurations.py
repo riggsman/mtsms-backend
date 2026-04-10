@@ -16,6 +16,7 @@ from app.schemas.service_configuration import (
     ServiceConfigurationUpdateItem,
 )
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import user_is_system_admin
 
 service_configurations = APIRouter()
 
@@ -29,17 +30,17 @@ service_configurations = APIRouter()
 def create_service_configuration(
     payload: ServiceConfigurationRequest,
     db: Session = Depends(get_db_session),
-    current_user: User = Depends(
-        require_any_role_admin(
-            UserRole.ADMIN,
-            UserRole.SUPER_ADMIN,
-        )
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Create a new service configuration.
-    Admin and super_admin only.
+    System-level only (system_admin / system_super_admin).
     """
+    if not user_is_system_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admin or system super admin can manage service configurations",
+        )
     # Check if configuration already exists for this service/key/tenant combination
     query = db.query(ServiceConfiguration).filter(
         ServiceConfiguration.service_name == payload.service_name,
@@ -95,17 +96,17 @@ def create_service_configuration(
 def create_bulk_service_configurations(
     payload: ServiceConfigurationBulkRequest,
     db: Session = Depends(get_db_session),
-    current_user: User = Depends(
-        require_any_role_admin(
-            UserRole.ADMIN,
-            UserRole.SUPER_ADMIN,
-        )
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Create multiple service configurations at once.
-    Admin and super_admin only.
+    System-level only (system_admin / system_super_admin).
     """
+    if not user_is_system_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admin or system super admin can manage service configurations",
+        )
     created_configs = []
     
     for key, value in payload.configurations.items():
@@ -182,21 +183,27 @@ def create_bulk_service_configurations(
 def update_service_configurations(
     payload: ServiceConfigurationUpdateRequest,
     db: Session = Depends(get_db_session),
-    current_user: User = Depends(
-        require_any_role_admin(
-            UserRole.ADMIN,
-            UserRole.SUPER_ADMIN,
-        )
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Update service configurations based on service_id and subscription_type.
-    Admin and super_admin only.
+    System-level only (system_admin / system_super_admin).
+
+    This endpoint also synchronizes the corresponding flags on the
+    SubscriptionService model (`is_freemium_enabled`, `is_premium_enabled`)
+    so the service table reflects the current availability.
     """
+    if not user_is_system_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admin or system super admin can manage service configurations",
+        )
     updated_configs = []
-    
+
     for config_item in payload.configurations:
-        # Get the subscription service to get its name
+        # Get the subscription service so we can:
+        # 1) know its name for ServiceConfiguration.service_name
+        # 2) update its freemium/premium flags to mirror config
         subscription_service = (
             db.query(SubscriptionService)
             .filter(
@@ -205,35 +212,36 @@ def update_service_configurations(
             )
             .first()
         )
-        
+
         if not subscription_service:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Subscription service with ID {config_item.service_id} not found",
             )
-        
+
         # Use subscription service name as service_name
         service_name = subscription_service.name
-        
+
         # Use subscription_type as configuration_key
         configuration_key = f"subscription_type_{config_item.subscription_type}"
-        
+
         # Store is_enabled as configuration_value (as JSON boolean string)
         configuration_value = json.dumps({"is_enabled": config_item.is_enabled})
-        
+
         # Check if configuration already exists
         query = db.query(ServiceConfiguration).filter(
             ServiceConfiguration.service_name == service_name,
             ServiceConfiguration.configuration_key == configuration_key,
             ServiceConfiguration.deleted_at.is_(None),
         )
-        
+
         existing = query.first()
-        
+
         if existing:
             # Update existing configuration
             existing.configuration_value = configuration_value
             existing.is_active = config_item.is_enabled
+            db.add(existing)
             db.commit()
             db.refresh(existing)
             updated_configs.append(
@@ -275,7 +283,18 @@ def update_service_configurations(
                     updated_at=new_config.updated_at,
                 )
             )
-    
+
+        # --- Synchronize flags on SubscriptionService itself ---
+        # If subscription_type == 'freemium' or 'premium', update respective flag.
+        if config_item.subscription_type.lower() == "freemium":
+            subscription_service.is_freemium_enabled = config_item.is_enabled
+        elif config_item.subscription_type.lower() == "premium":
+            subscription_service.is_premium_enabled = config_item.is_enabled
+
+        db.add(subscription_service)
+        db.commit()
+        db.refresh(subscription_service)
+
     return updated_configs
 
 
@@ -286,22 +305,22 @@ def update_service_configurations(
 )
 def list_service_configurations(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     service_name: Optional[str] = Query(None, description="Filter by service name"),
     tenant_id: Optional[int] = Query(None, description="Filter by tenant ID"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     db: Session = Depends(get_db_session),
-    current_user: User = Depends(
-        require_any_role_admin(
-            UserRole.ADMIN,
-            UserRole.SUPER_ADMIN,
-        )
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     """
     List service configurations with pagination.
-    Admin and super_admin only.
+    System-level only (system_admin / system_super_admin).
     """
+    if not user_is_system_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admin or system super admin can list service configurations",
+        )
     query = db.query(ServiceConfiguration).filter(
         ServiceConfiguration.deleted_at.is_(None)
     )
@@ -342,3 +361,104 @@ def list_service_configurations(
         page=page,
         page_size=page_size,
     )
+
+
+@service_configurations.get(
+    "/tenant/check-service-access",
+    tags=["Service Configurations"],
+)
+def check_service_access_for_tenant(
+    service_name: str = Query(..., description="Name of the service to check access for"),
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Public tenant endpoint used by the student UI to check if a given
+    service is currently enabled (freemium or premium) in the admin
+    subscription management screen.
+
+    For now this checks global configuration only and does not
+    differentiate per-tenant subscription plans – if the service is
+    enabled for *any* subscription type, students can use it.
+    """
+    # Find the subscription service by name
+    subscription_service = (
+        db.query(SubscriptionService)
+        .filter(
+            SubscriptionService.name == service_name,
+            SubscriptionService.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not subscription_service:
+        # Service not defined → no access
+        return {"service_name": service_name, "has_access": False}
+
+    # Look for any active configuration entries for this service
+    configs = (
+        db.query(ServiceConfiguration)
+        .filter(
+            ServiceConfiguration.service_name == subscription_service.name,
+            ServiceConfiguration.configuration_key.in_(
+                ["subscription_type_freemium", "subscription_type_premium"]
+            ),
+            ServiceConfiguration.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    has_access = False
+    # Base amount comes from the SubscriptionService "price" field
+    amount = None
+    if subscription_service.price is not None:
+        try:
+            amount = float(subscription_service.price)
+        except (TypeError, ValueError):
+            amount = None
+
+    # Track whether freemium is enabled and any configured max free downloads
+    is_freemium_enabled = False
+    max_free_download = None
+
+    for cfg in configs:
+        # configuration_value is stored as JSON string like {"is_enabled": true}
+        try:
+            value = json.loads(cfg.configuration_value) if cfg.configuration_value else {}
+        except Exception:
+            value = {}
+
+        is_enabled = bool(value.get("is_enabled", cfg.is_active))
+
+        if is_enabled:
+            has_access = True
+
+            # If this is the freemium configuration, read max_free_download if provided
+            if cfg.configuration_key == "subscription_type_freemium":
+                is_freemium_enabled = True
+                raw_max_free = value.get("max_free_download")
+                try:
+                    if raw_max_free is not None:
+                        max_free_download = int(raw_max_free)
+                except (TypeError, ValueError):
+                    max_free_download = None
+
+            # We can stop once we find the first enabled configuration
+            break
+
+    response = {
+        "service_name": service_name,
+        "has_access": has_access,
+    }
+
+    # Only include amount if we successfully parsed a number
+    if amount is not None:
+        response["amount"] = amount
+
+    # Include freemium/max-free metadata if available
+    if is_freemium_enabled:
+        response["is_freemium_enabled"] = True
+    if max_free_download is not None:
+        response["max_free_download"] = max_free_download
+
+    return response

@@ -4,8 +4,8 @@ import datetime
 
 class Class(BaseModel_Base):
     __tablename__ = "classes"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
     name = Column(String(100), nullable=False)
     code = Column(String(20), nullable=False)  # Class code (e.g., "l1", "L1", "Level 1")
     institution_level = Column(String(10), nullable=False, default="HI")  # HI (Higher Institution) or SI (Secondary Institution)

@@ -6,6 +6,7 @@ from fastapi import HTTPException, Header, Depends, status
 from typing import Optional
 from app.dependencies.auth import get_current_user_tenant
 from app.models.user import User
+from app.helpers.user_roles import user_is_system_admin
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ def get_institution_id_from_header(
     Raises:
         HTTPException: If institution_id validation fails
     """
-    is_system_admin = current_user.role and current_user.role.startswith('system_')
+    is_system_admin = user_is_system_admin(current_user)
     
     # System admins can access any institution or no institution
     if is_system_admin:

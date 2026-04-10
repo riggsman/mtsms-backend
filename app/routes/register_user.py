@@ -138,6 +138,7 @@ async def new_user(
         # Use tenant_name from request body if provided, otherwise from header
         actual_tenant_name = register_request.tenant_name or tenant_name
         domain = register_request.domain or (actual_tenant_name.lower().replace(' ', '') if actual_tenant_name else None)
+        category = register_request.category
         
         # Validate domain format
         if domain:
@@ -157,7 +158,8 @@ async def new_user(
             new_tenant = Tenant(
                 name=actual_tenant_name,
                 domain=domain,
-                database_url=default_db_url
+                database_url=default_db_url,
+                category=category
             )
             global_db.add(new_tenant)
             global_db.commit()

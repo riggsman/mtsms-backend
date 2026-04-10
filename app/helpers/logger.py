@@ -21,3 +21,18 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 logger = setup_logging()
+
+def info(msg):
+    logger.info(f"{msg}")
+
+def error(msg):
+    logger.error(f"{msg}")
+
+def warning(msg):
+    logger.warning(f"{msg}")
+
+def debug(msg):
+    logger.debug(f"{msg}")
+
+def critical(msg):
+    logger.critical(f"{msg}")

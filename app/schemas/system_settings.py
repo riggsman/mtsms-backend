@@ -32,6 +32,11 @@ class SystemSettingsRequest(BaseModel):
   maxTenants: Optional[int] = None
   sessionTimeout: Optional[int] = None
   emailNotifications: Optional[bool] = None
+  cacheTimeout: Optional[int] = None
+  inactivityTimeout: Optional[int] = None
+  maintenanceCheckInterval: Optional[int] = None
+  accessTokenExpireMinutes: Optional[int] = None
+  refreshTokenExpireDays: Optional[int] = None
   firebaseMessaging: Optional[FirebaseMessagingConfig] = None
 
 
@@ -46,6 +51,11 @@ class SystemSettingsResponse(BaseModel):
   maxTenants: int
   sessionTimeout: int
   emailNotifications: bool
+  cacheTimeout: Optional[int] = None
+  inactivityTimeout: Optional[int] = None
+  maintenanceCheckInterval: Optional[int] = None
+  accessTokenExpireMinutes: int
+  refreshTokenExpireDays: int
   firebaseMessaging: Optional[FirebaseMessagingConfig] = None
   created_at: Optional[datetime] = None
   updated_at: Optional[datetime] = None
@@ -59,3 +69,6 @@ class SystemSettingsState(BaseModel):
   maintenanceMode: bool
   allowNewRegistrations: bool
   emailNotifications: bool
+  cacheTimeout: Optional[int] = None
+  inactivityTimeout: Optional[int] = None
+  maintenanceCheckInterval: Optional[int] = None

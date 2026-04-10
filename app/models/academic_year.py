@@ -4,8 +4,8 @@ import datetime
 
 class AcademicYear(BaseModel_Base):
     __tablename__ = "academic_years"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
     name = Column(String(100), nullable=False)
     start_date = Column(String(50), nullable=False)
     end_date = Column(String(50), nullable=False)

@@ -15,13 +15,13 @@ from fastapi import HTTPException, status, Header
 from app.models.user import User
 from app.models.role import UserRole
 from typing import Optional
+from app.helpers.user_roles import user_is_system_admin, user_is_tenant_super_admin_or_system
 
 tenant = APIRouter()
 
 def check_system_admin(current_user: User):
     """Helper to check if user is system admin"""
-    if (current_user.role != UserRole.SUPER_ADMIN.value and 
-        not (current_user.role and current_user.role.startswith('system_'))):
+    if not user_is_tenant_super_admin_or_system(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Required one of: ['super_admin', 'system_super_admin']"
@@ -95,6 +95,9 @@ async def create_tenant(
             admin_username = form_data.get("admin_username")
             admin_password = form_data.get("admin_password")
             must_change_password = form_data.get("must_change_password")
+            branches_enabled = form_data.get("branches_enabled")
+            initial_branch_name = form_data.get("initial_branch_name")
+            initial_branch_name = form_data.get("initial_branch_name")
             
             # Get logo file if provided
             if "logo" in form_data:
@@ -119,6 +122,14 @@ async def create_tenant(
                         must_change_password_bool = must_change_password.lower() in ('true', '1', 'yes', 'on')
                 else:
                     must_change_password_bool = bool(must_change_password)
+
+            branches_enabled_bool = None
+            if branches_enabled is not None:
+                if isinstance(branches_enabled, str):
+                    if branches_enabled.strip():
+                        branches_enabled_bool = branches_enabled.lower() in ('true', '1', 'yes', 'on')
+                else:
+                    branches_enabled_bool = bool(branches_enabled)
             
             # Create TenantRequest object
             tenant_request = TenantRequest(
@@ -127,6 +138,8 @@ async def create_tenant(
                 domain=domain if domain and str(domain).strip() else None,
                 database_name=database_name if database_name and str(database_name).strip() else None,
                 is_active=is_active_bool,
+                branches_enabled=branches_enabled_bool,
+                initial_branch_name=initial_branch_name if initial_branch_name and str(initial_branch_name).strip() else None,
                 admin_username=admin_username if admin_username and str(admin_username).strip() else None,
                 admin_password=admin_password if admin_password and str(admin_password).strip() else None,
                 must_change_password=must_change_password_bool if must_change_password_bool is not None else False
@@ -175,7 +188,7 @@ async def create_tenant(
 @tenant.get("/tenants", response_model=PaginatedResponse[TenantResponse])
 async def list_tenants(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     db: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user)
 ):
@@ -202,7 +215,7 @@ async def get_my_tenant(
     Falls back to X-Tenant-Name header if institution_id is not available.
     """
     # System admins don't have a tenant
-    is_system_admin = current_user.role and current_user.role.startswith('system_')
+    is_system_admin = user_is_system_admin(current_user)
     if is_system_admin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -336,6 +349,8 @@ async def update_tenant_endpoint(
             admin_username = form_data.get("admin_username")
             admin_password = form_data.get("admin_password")
             must_change_password = form_data.get("must_change_password")
+            branches_enabled = form_data.get("branches_enabled")
+            initial_branch_name = form_data.get("initial_branch_name")
             # Get logo file if provided
             logo_file = None
             if "logo" in form_data:
@@ -360,6 +375,14 @@ async def update_tenant_endpoint(
                         must_change_password_bool = must_change_password.lower() in ('true', '1', 'yes', 'on')
                 else:
                     must_change_password_bool = bool(must_change_password)
+
+            branches_enabled_bool = None
+            if branches_enabled is not None:
+                if isinstance(branches_enabled, str):
+                    if branches_enabled.strip():
+                        branches_enabled_bool = branches_enabled.lower() in ('true', '1', 'yes', 'on')
+                else:
+                    branches_enabled_bool = bool(branches_enabled)
             
             # Only set fields that are not None and not empty strings
             tenant_update = TenantUpdate(
@@ -367,6 +390,8 @@ async def update_tenant_endpoint(
                 category=category if category and str(category).strip() else None,
                 domain=domain if domain and str(domain).strip() else None,
                 is_active=is_active_bool,
+                branches_enabled=branches_enabled_bool,
+                initial_branch_name=initial_branch_name if initial_branch_name and str(initial_branch_name).strip() else None,
                 admin_username=admin_username if admin_username and str(admin_username).strip() else None,
                 admin_password=admin_password if admin_password and str(admin_password).strip() else None,
                 must_change_password=must_change_password_bool

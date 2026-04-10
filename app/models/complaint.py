@@ -4,15 +4,16 @@ import datetime
 
 class Complaint(BaseModel_Base):
     __tablename__ = "complaints"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
-    student_id = Column(String(70), nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
+    student_id = Column(String(70), nullable=False)
     complaint_type = Column(String(100), nullable=False)  # academic_record, lecturer, etc.
     caption = Column(String(200), nullable=False)
     contents = Column(Text, nullable=False)
     is_anonymous = Column(Boolean, default=False, nullable=False)
     screenshots = Column(Text, nullable=True)  # JSON array of file URLs (files saved to filesystem)
     status = Column(String(50), default="pending", nullable=False)  # pending, addressed
+    update_note = Column(String(50),nullable=True)
     resolved_by = Column(String(200), nullable=True)
     resolver_role = Column(String(50), nullable=True)
     resolved_date = Column(DateTime, nullable=True)

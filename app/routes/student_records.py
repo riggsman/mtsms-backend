@@ -8,9 +8,11 @@ from app.apis.student_records import (
 )
 from app.dependencies.tenantDependency import get_db
 from app.dependencies.auth import get_current_user_tenant, require_any_role
+from app.dependencies.paymentAccess import check_payment_access
 from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import user_has_role, user_requires_tenant_scope_for_data
 
 student_record = APIRouter()
 
@@ -31,11 +33,14 @@ def get_student_record_endpoint(
 ):
     """Get a student record by ID. Students can only view their own records."""
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     
     # Students can only view their own records
-    if current_user.role == UserRole.STUDENT.value:
+    if user_has_role(current_user, UserRole.STUDENT.value):
+        # Check payment access first - will raise PaymentAccessError if not paid
+        payment_status = check_payment_access(db=db, current_user=current_user)
+        
         # Get the record first
         record = get_student_record(db=db, record_id=record_id, institution_id=institution_id)
         # Find student by user email
@@ -65,7 +70,7 @@ def get_student_record_endpoint(
 @student_record.get("/student-records", response_model=PaginatedResponse[StudentRecordResponse])
 def list_student_records(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     student_id: Optional[str] = Query(None),
     course_code: Optional[str] = Query(None),
     semester: Optional[str] = Query(None),
@@ -76,11 +81,14 @@ def list_student_records(
     """Get list of student records with pagination. Students can only view their own records."""
     skip = (page - 1) * page_size
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     
     # Students can only view their own records
-    if current_user.role == UserRole.STUDENT.value:
+    if user_has_role(current_user, UserRole.STUDENT.value):
+        # Check payment access first - will raise PaymentAccessError if not paid
+        payment_status = check_payment_access(db=db, current_user=current_user)
+        
         # Find student by user email
         from app.models.student import Student
         student = db.query(Student).filter(
@@ -123,7 +131,7 @@ def update_student_record_endpoint(
 ):
     """Update a student record"""
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     return update_student_record(
         db=db,
@@ -141,7 +149,7 @@ def delete_student_record_endpoint(
 ):
     """Delete a student record (soft delete)"""
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     delete_student_record(db=db, record_id=record_id, current_user=current_user, institution_id=institution_id)
     return None

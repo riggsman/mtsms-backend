@@ -24,6 +24,7 @@ class RegisterRequest(BaseModel):
     gender: str = Field(..., description="Gender (Male, Female, Other)")
     address: str = Field(..., min_length=1, max_length=200, description="Address is required")
     email: EmailStr = Field(..., description="Valid email address")
+    category: str = Field(..., min_length=2,max_length=50,description="Tenant category MUST be HI for Higher Institute or SI for Secondary Institute")
     phone: str = Field(..., min_length=1, max_length=200, description="Phone number is required")
     role: str = Field(..., description="User role. Registration is only available for super_admin role.")
     username: str = Field(..., min_length=3, max_length=50, description="Username (3-50 characters)")
@@ -34,7 +35,7 @@ class RegisterRequest(BaseModel):
     @field_validator('gender')
     @classmethod
     def validate_gender(cls, v):
-        allowed_genders = ['Male', 'Female', 'Other']
+        allowed_genders = ['Male', 'Female']
         if v not in allowed_genders:
             raise ValueError(f"Gender must be one of: {', '.join(allowed_genders)}")
         return v

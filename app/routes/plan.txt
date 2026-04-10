@@ -1,0 +1,15 @@
+User opens website
+       ↓
+Browser asks notification permission
+       ↓
+Firebase generates FCM token
+       ↓
+Token sent to FastAPI backend
+       ↓
+Backend stores token
+       ↓
+Backend sends message via Firebase Admin
+       ↓
+Firebase pushes notification
+       ↓
+Browser service worker displays notification

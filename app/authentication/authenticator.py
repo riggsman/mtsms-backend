@@ -1,10 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from jose import ExpiredSignatureError, JWTError, jwt
 from datetime import datetime, timedelta, timezone
 import re
 from app.conf.config import settings
+from app.models.user import User
+from app.database.base import get_db_session
 
 # Argon2 context for hashing (more secure than bcrypt)
 # Argon2id is the recommended variant for password hashing
@@ -94,6 +96,7 @@ def verify_and_decode_access_token(token: str, raise_exception: bool = False):
                     detail=error_msg
                 )
             return {"error": error_msg}
+        print("DECODE TOKEN PAYLOAD  ",payload)
 
         return {"success": True, "data": payload}
 
@@ -147,4 +150,62 @@ def create_refresh_token(data: dict, expires_delta: timedelta = None):
 
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
+
+
+class AuthUser:
+    def __init__(self, user):
+        self.id = user.id
+        self.user = user
+        self.institution_id = user.institution_id
+        self.branch_id = user.branch_id
+        self.username = user.username
+        self.email = user.email
+        self.role = user.role
+
+
+def auth_guard(
+    authorization: str = Header(None, alias="Authorization"),
+    db: Session = Depends(get_db_session)
+) -> AuthUser:
+    """
+    Dependency for authentication - extracts user from JWT token
+    """
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header missing"
+        )
+    
+    try:
+        scheme, token = authorization.split()
+        if scheme.lower() != "bearer":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication scheme"
+            )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+    
+    result = verify_and_decode_access_token(token, raise_exception=True)
+    
+    payload = result.get("data", {})
+    user_id = int(payload.get("sub"))
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+    
+    if user.is_active != "active":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is not active"
+        )
+    
+    return AuthUser(user)
 

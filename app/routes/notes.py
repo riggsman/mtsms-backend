@@ -22,6 +22,7 @@ from app.helpers.file_generator import generate_pdf, generate_word
 from app.models.course import Course
 from app.models.teacher import Teacher
 from app.models.note import Note
+from app.helpers.user_roles import role_string_for_legacy, user_has_any_role, user_has_role, user_requires_tenant_scope_for_data
 import os
 
 note_router = APIRouter()
@@ -29,7 +30,7 @@ note_router = APIRouter()
 @note_router.get("/notes", response_model=PaginatedResponse[NoteResponse])
 def list_notes(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=1000),
     course_id: Optional[int] = Query(None),
     department_id: Optional[int] = Query(None),
     lecturer_id: Optional[int] = Query(None),
@@ -39,7 +40,7 @@ def list_notes(
     """Get list of notes for the current tenant (any authenticated tenant user)"""
     # Determine institution_id for filtering
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
         if not institution_id:
             raise HTTPException(
@@ -107,7 +108,7 @@ def list_notes(
 def get_student_notes(
     student_id: str,
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=1000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
@@ -118,7 +119,7 @@ def get_student_notes(
     """
     # Determine institution_id for filtering
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
         if not institution_id:
             raise HTTPException(
@@ -131,7 +132,7 @@ def get_student_notes(
     from app.models.student import Student
     
     # Students can only view their own notes
-    if current_user.role == UserRole.STUDENT.value:
+    if user_has_role(current_user, UserRole.STUDENT.value):
         # Find student by user email
         student = db.query(Student).filter(
             Student.email == current_user.email,
@@ -248,7 +249,7 @@ def get_note_endpoint(
     """Get a note by ID (tenant-scoped)"""
     # Determine institution_id for filtering
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
         if not institution_id:
             raise HTTPException(
@@ -308,7 +309,7 @@ async def create_note_endpoint(
     """
     # Determine institution_id for filtering
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
         if not institution_id:
             raise HTTPException(
@@ -400,7 +401,7 @@ async def create_note_endpoint(
         lecturer = get_teacher_by_user_id(db, current_user.id)
         if lecturer:
             final_lecturer_id = lecturer.id
-        elif current_user.role in ["admin", "super_admin"]:
+        elif user_has_any_role(current_user, ["admin", "super_admin"]):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Please select a staff member for this note."
@@ -487,7 +488,7 @@ def generate_note_files(
     """Generate PDF and/or Word files for a note"""
     # Determine institution_id for filtering
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
         if not institution_id:
             raise HTTPException(
@@ -583,7 +584,7 @@ async def update_note_endpoint(
     """
     # Determine institution_id for filtering
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
         if not institution_id:
             raise HTTPException(
@@ -703,7 +704,7 @@ def delete_note_endpoint(
     """Delete a note (admin/staff only)"""
     # Determine institution_id for filtering
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
         if not institution_id:
             raise HTTPException(
@@ -729,7 +730,7 @@ def download_note_file(
     """Download a note file (PDF or Word)"""
     # Determine institution_id for filtering
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
         if not institution_id:
             raise HTTPException(

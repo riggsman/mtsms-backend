@@ -1,16 +1,26 @@
 from sqlalchemy.orm import Session
 from typing import Optional
+from app.models.tenant import Tenant
 from app.models.tenant_settings import TenantSettings
 from app.schemas.tenant_settings import TenantSettingsRequest, TenantSettingsResponse, MatriculeFormatConfig
 from app.exceptions import NotFoundError, ValidationError
 import json
 import datetime
 
+def get_tenant_category(db: Session, institution_id: int) -> Optional[Tenant]:
+    """Get tenant settings by institution_id"""
+    print("INSTITUTION ID FROM CLIENT ", institution_id)
+    return db.query(Tenant).filter(
+        Tenant.id == institution_id
+    ).first()
+    
 def get_tenant_settings(db: Session, institution_id: int) -> Optional[TenantSettings]:
     """Get tenant settings by institution_id"""
+    print("INSTITUTION ID FROM CLIENT ", institution_id)
     return db.query(TenantSettings).filter(
         TenantSettings.institution_id == institution_id
     ).first()
+
 
 def create_or_update_tenant_settings(
     db: Session, 
@@ -39,6 +49,8 @@ def create_or_update_tenant_settings(
         # Update email_reminder_time if provided
         if settings.email_reminder_time is not None:
             existing.email_reminder_time = settings.email_reminder_time
+        if settings.branches_enabled is not None:
+            existing.branches_enabled = settings.branches_enabled
         db.commit()
         db.refresh(existing)
         return existing
@@ -49,7 +61,8 @@ def create_or_update_tenant_settings(
             institution_id=institution_id,
             matricule_format=matricule_format_json,
             is_matricule_format_set=True if has_matricule_format_in_request else False,
-            email_reminder_time=settings.email_reminder_time if settings.email_reminder_time is not None else 30
+            email_reminder_time=settings.email_reminder_time if settings.email_reminder_time is not None else 30,
+            branches_enabled=bool(settings.branches_enabled) if settings.branches_enabled is not None else False,
         )
         db.add(new_settings)
         db.commit()

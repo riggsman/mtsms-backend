@@ -284,6 +284,15 @@ def update_class(db: Session, class_id: int, class_update: ClassUpdate, current_
     
     return class_obj
 
+def check_classes_configured(db: Session, institution_id: int) -> bool:
+    """Check if classes are configured for the institution (at least one custom class exists)"""
+    count = db.query(Class).filter(
+        Class.institution_id == institution_id,
+        Class.is_custom == True,
+        Class.deleted_at.is_(None)
+    ).count()
+    return count > 0
+
 def delete_class(db: Session, class_id: int, current_user: Optional[User] = None) -> bool:
     """Soft delete a class"""
     class_obj = get_class(db, class_id)

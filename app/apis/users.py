@@ -2,6 +2,14 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
 from app.models.user import User
+from app.helpers.user_roles import (
+    normalize_roles_for_storage,
+    role_column_contains_role,
+    role_column_exclude_pure_role,
+    role_string_for_legacy,
+    user_has_role,
+    user_is_system_admin,
+)
 from app.exceptions import NotFoundError, ConflictError
 from app.helpers.pagination import paginate_query
 from app.schemas.users import UserRequest, UserUpdate
@@ -14,6 +22,12 @@ from app.helpers.async_helper import run_async_safe
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+def _roles_for_db(raw) -> List[str]:
+    """Canonical role list for JSON column; default single student."""
+    out = normalize_roles_for_storage(raw)
+    return out if out else ["student"]
+
 
 def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = None) -> User:
     """
@@ -39,15 +53,21 @@ def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = N
     
     # Determine user_type based on creator's role
     user_type = "TENANT"  # Default to TENANT
-    if creator_user and creator_user.role and creator_user.role.startswith('system_'):
+    if creator_user and user_is_system_admin(creator_user):
         user_type = "SYSTEM"
     
     # Hash password
     hashed_password = hash_password(user.password)
+    role_list = _roles_for_db(user.role)
+    inferred_position = getattr(user, "position", None) or getattr(user, "designation", None) or getattr(user, "title", None)
+    if not inferred_position and role_list:
+        inferred_position = ",".join(sorted(role_list))
     
     # Create new user
     new_user = User(
         institution_id=user.institution_id,
+        branch_id=getattr(user, "branch_id", None),
+        department_id=getattr(user, "department_id", None),
         firstname=user.firstname,
         middlename=user.middlename,
         lastname=user.lastname,
@@ -57,7 +77,8 @@ def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = N
         phone=user.phone,
         username=user.username,
         password=hashed_password,
-        role=user.role,
+        role=role_list,
+        position=inferred_position,
         user_type=user_type,
         is_active=user.is_active or "active",
         must_change_password=getattr(user, 'must_change_password', 'false')
@@ -110,8 +131,7 @@ def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = N
         
         # Determine user type for email
         user_full_name = f"{new_user.firstname} {new_user.lastname}".strip()
-        roles_list = new_user.role.split(',') if ',' in new_user.role else [new_user.role]
-        is_student = 'student' in roles_list
+        is_student = user_has_role(new_user, "student")
         
         # Send email with tracking - use wrapper that calls EmailService methods
         async def send_tracked_email():
@@ -193,17 +213,21 @@ def get_users(
     limit: int = 10,
     role: Optional[str] = None,
     institution_id: Optional[int] = None,
-    exclude_role: Optional[str] = None
+    exclude_role: Optional[str] = None,
+    branch_id: Optional[int] = None,
 ) -> tuple[List[User], int]:
     """Get list of users with pagination"""
     query = db.query(User).filter(User.deleted_at.is_(None))
+    bind = db.get_bind()
     
     if role:
-        query = query.filter(User.role == role)
+        query = query.filter(role_column_contains_role(bind, User.role, role))
     if exclude_role:
-        query = query.filter(User.role != exclude_role)
+        query = query.filter(role_column_exclude_pure_role(bind, User.role, exclude_role))
     if institution_id:
         query = query.filter(User.institution_id == institution_id)
+    if branch_id is not None:
+        query = query.filter(User.branch_id == branch_id)
     
     return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
 
@@ -228,6 +252,23 @@ def update_user(db: Session, user_id: int, user_update: UserUpdate, current_user
     user = get_user(db, user_id)
     
     update_data = user_update.dict(exclude_unset=True)
+
+    # Normalize role metadata aliases into the persisted users.position column.
+    # Frontends may send position/designation/title based on module context.
+    if "position" not in update_data:
+        if update_data.get("designation"):
+            update_data["position"] = update_data["designation"]
+        elif update_data.get("title"):
+            update_data["position"] = update_data["title"]
+    update_data.pop("designation", None)
+    update_data.pop("title", None)
+    
+    # Normalize role values and derive position from roles if not provided.
+    if "role" in update_data and update_data["role"] is not None:
+        role_list = normalize_roles_for_storage(update_data["role"])
+        update_data["role"] = role_list if role_list else ["student"]
+        if not update_data.get("position") and update_data["role"]:
+            update_data["position"] = ",".join(sorted(update_data["role"]))
     
     # If password is being updated, validate and hash it
     if "password" in update_data and update_data["password"]:
@@ -420,7 +461,7 @@ def assign_student_password(db: Session, student_id: int, password: str, usernam
             phone=student.phone,
             username=username,
             password=hashed_password,
-            role="student",
+            role=["student"],
             user_type="TENANT",  # Students are always TENANT users
             is_active="active",
             must_change_password="true"  # Student must change password on first login
@@ -568,7 +609,7 @@ def change_password(db: Session, user_id: int, current_password: str, new_passwo
                 entity_type="user",
                 entity_id=user.id,
                 performed_by=performer_display_name,
-                performer_role=performer.role,
+                performer_role=role_string_for_legacy(performer),
                 performer_id=performer.id,
                 content=content
             )
@@ -656,7 +697,7 @@ def suspend_user(db: Session, user_id: int, reason: str, current_user: Optional[
         
         # Get student info if user is a student
         student = None
-        if user.role == "student":
+        if user_has_role(user, "student"):
             student = db.query(Student).filter(Student.email == user.email).first()
         
         student_name = None
@@ -749,7 +790,7 @@ def suspend_user_by_student_id(db: Session, student_id: int, reason: str, curren
             phone=student.phone,
             username=username,
             password=hash_password("TEMP_PASSWORD_" + str(student.id)),  # Temporary password, user will need to reset
-            role="student",
+            role=["student"],
             user_type="TENANT",
             is_active="suspended",  # Create as suspended
             must_change_password="true"

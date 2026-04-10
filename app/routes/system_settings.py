@@ -24,6 +24,7 @@ from app.models.system_settings import SystemSettings
 from app.models.user import User
 from app.models.role import UserRole
 from app.dependencies.auth import get_current_user
+from app.helpers.user_roles import user_is_system_admin
 from app.schemas.system_settings import (
     SystemSettingsRequest,
     SystemSettingsResponse,
@@ -80,12 +81,18 @@ def get_system_settings_state(
             maintenanceMode=False,
             allowNewRegistrations=True,
             emailNotifications=True,
+            cacheTimeout=5,
+            inactivityTimeout=5,
+            maintenanceCheckInterval=60,
         )
     
     return SystemSettingsState(
         maintenanceMode=settings.maintenance_mode,
         allowNewRegistrations=settings.allow_new_registrations,
         emailNotifications=settings.email_notifications,
+        cacheTimeout=getattr(settings, "cache_timeout", 5),
+        inactivityTimeout=getattr(settings, "inactivity_timeout", 5),
+        maintenanceCheckInterval=getattr(settings, "maintenance_check_interval", 60),
     )
 
 
@@ -125,10 +132,7 @@ def get_system_settings(
     """
     Return global system settings for the platform (system admin only).
     """
-    # Check if user is system admin or system super admin
-    if (current_user.role != UserRole.SYSTEM_ADMIN.value and 
-        current_user.role != UserRole.SYSTEM_SUPER_ADMIN.value and
-        not (current_user.role and current_user.role.startswith('system_'))):
+    if not user_is_system_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only system admin or system super admin can access system settings"
@@ -163,6 +167,9 @@ def get_system_settings(
         maxTenants=settings.max_tenants,
         sessionTimeout=settings.session_timeout,
         emailNotifications=settings.email_notifications,
+        cacheTimeout=getattr(settings, "cache_timeout", 5),
+        inactivityTimeout=getattr(settings, "inactivity_timeout", 5),
+        maintenanceCheckInterval=getattr(settings, "maintenance_check_interval", 60),
         firebaseMessaging=firebase_cfg,
         created_at=settings.created_at,
         updated_at=settings.updated_at,
@@ -182,10 +189,7 @@ def update_system_settings(
     Update global system settings from the admin UI.
     Only fields provided in the payload are updated (partial update).
     """
-    # Check if user is system admin or system super admin
-    if (current_user.role != UserRole.SYSTEM_ADMIN.value and 
-        current_user.role != UserRole.SYSTEM_SUPER_ADMIN.value and
-        not (current_user.role and current_user.role.startswith('system_'))):
+    if not user_is_system_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only system admin or system super admin can update system settings"
@@ -204,6 +208,12 @@ def update_system_settings(
         settings.session_timeout = payload.sessionTimeout
     if payload.emailNotifications is not None:
         settings.email_notifications = payload.emailNotifications
+    if payload.cacheTimeout is not None:
+        settings.cache_timeout = payload.cacheTimeout
+    if payload.inactivityTimeout is not None:
+        settings.inactivity_timeout = payload.inactivityTimeout
+    if payload.maintenanceCheckInterval is not None:
+        settings.maintenance_check_interval = payload.maintenanceCheckInterval
 
     if payload.firebaseMessaging is not None:
         # Update individual Firebase config columns
@@ -270,6 +280,9 @@ def update_system_settings(
         maxTenants=settings.max_tenants,
         sessionTimeout=settings.session_timeout,
         emailNotifications=settings.email_notifications,
+        cacheTimeout=getattr(settings, "cache_timeout", 5),
+        inactivityTimeout=getattr(settings, "inactivity_timeout", 5),
+        maintenanceCheckInterval=getattr(settings, "maintenance_check_interval", 60),
         firebaseMessaging=firebase_cfg,
         created_at=settings.created_at,
         updated_at=settings.updated_at,

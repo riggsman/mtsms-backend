@@ -12,8 +12,36 @@ from app.schemas.subscription_service import (
     SubscriptionServiceResponse,
 )
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import user_is_system_admin
 
 subscription_services = APIRouter()
+
+
+def _update_service_from_payload(service: SubscriptionService, payload: SubscriptionServiceRequest) -> None:
+    """
+    Apply incoming request fields to an existing SubscriptionService instance.
+    Shared between create and update handlers.
+    """
+    service.name = payload.name
+    service.description = payload.description
+    service.price = payload.price
+    service.currency = payload.currency
+    service.billing_period = payload.billing_period
+    service.is_active = payload.is_active
+    # Safely read freemium/premium flags from the request; default to False
+    service.is_freemium_enabled = bool(getattr(payload, "freemium_enabled", False) or False)
+    service.is_premium_enabled = bool(getattr(payload, "premium_enabled", False) or False)
+
+    # Convert features dict to JSON string for storage.
+    # If no explicit features are provided, default to using the
+    # service name as the key so it matches the element name used
+    # in the student Academics UI and service configuration.
+    features_payload = payload.features
+    if features_payload is None:
+        # e.g. {"Download Results": {"enabled": True}}
+        features_payload = {payload.name: {"enabled": True}}
+
+    service.features = json.dumps(features_payload)
 
 
 @subscription_services.post(
@@ -25,17 +53,18 @@ subscription_services = APIRouter()
 def create_subscription_service(
     payload: SubscriptionServiceRequest,
     db: Session = Depends(get_db_session),
-    current_user: User = Depends(
-        require_any_role_admin(
-            UserRole.ADMIN,
-            UserRole.SUPER_ADMIN,
-        )
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Create a new subscription service.
-    Admin and super_admin only.
+    System-level only (system_admin / system_super_admin).
     """
+    # Authorize system_xxxx roles similar to system_settings APIs
+    if not user_is_system_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admin or system super admin can manage subscription services",
+        )
     # Check if service name already exists
     existing = (
         db.query(SubscriptionService)
@@ -59,11 +88,10 @@ def create_subscription_service(
             detail=f"Billing period must be one of: {', '.join(valid_periods)}",
         )
 
-    # Convert features dict to JSON string for storage
-    features_json = None
+    # Validate features format early
     if payload.features:
         try:
-            features_json = json.dumps(payload.features)
+            json.dumps(payload.features)
         except (TypeError, ValueError) as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -71,15 +99,8 @@ def create_subscription_service(
             )
 
     # Create new subscription service
-    new_service = SubscriptionService(
-        name=payload.name,
-        description=payload.description,
-        price=payload.price,
-        currency=payload.currency,
-        billing_period=payload.billing_period,
-        is_active=payload.is_active,
-        features=features_json,
-    )
+    new_service = SubscriptionService()
+    _update_service_from_payload(new_service, payload)
 
     db.add(new_service)
     db.commit()
@@ -101,6 +122,8 @@ def create_subscription_service(
         currency=new_service.currency,
         billing_period=new_service.billing_period,
         is_active=new_service.is_active,
+        freemium_enabled=new_service.is_freemium_enabled,
+        premium_enabled=new_service.is_premium_enabled,
         features=features_dict,
         created_at=new_service.created_at,
         updated_at=new_service.updated_at,
@@ -114,20 +137,20 @@ def create_subscription_service(
 )
 def list_subscription_services(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     db: Session = Depends(get_db_session),
-    current_user: User = Depends(
-        require_any_role_admin(
-            UserRole.ADMIN,
-            UserRole.SUPER_ADMIN,
-        )
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     """
     List subscription services with pagination.
-    Admin and super_admin only.
+    System-level only (system_admin / system_super_admin).
     """
+    if not user_is_system_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admin or system super admin can list subscription services",
+        )
     query = db.query(SubscriptionService).filter(
         SubscriptionService.deleted_at.is_(None)
     )
@@ -162,6 +185,8 @@ def list_subscription_services(
                 currency=service.currency,
                 billing_period=service.billing_period,
                 is_active=service.is_active,
+                freemium_enabled=getattr(service, "is_freemium_enabled", False),
+                premium_enabled=getattr(service, "is_premium_enabled", False),
                 features=features_dict,
                 created_at=service.created_at,
                 updated_at=service.updated_at,
@@ -173,4 +198,88 @@ def list_subscription_services(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@subscription_services.put(
+    "/admin/subscription-services/{service_id}",
+    response_model=SubscriptionServiceResponse,
+    tags=["Subscription Services"],
+)
+def update_subscription_service(
+    service_id: int,
+    payload: SubscriptionServiceRequest,
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Update an existing subscription service (including freemium/premium flags).
+    System-level only (system_admin / system_super_admin).
+    """
+    if not user_is_system_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admin or system super admin can manage subscription services",
+        )
+    service: Optional[SubscriptionService] = (
+        db.query(SubscriptionService)
+        .filter(
+            SubscriptionService.id == service_id,
+            SubscriptionService.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not service:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Subscription service with ID {service_id} not found",
+        )
+
+    # Validate billing period
+    valid_periods = ["monthly", "yearly", "one-time"]
+    if payload.billing_period not in valid_periods:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Billing period must be one of: {', '.join(valid_periods)}",
+        )
+
+    # Validate features format early
+    if payload.features:
+        try:
+            json.dumps(payload.features)
+        except (TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid features format: {str(e)}",
+            )
+
+    # Apply updates
+    _update_service_from_payload(service, payload)
+
+    db.add(service)
+    db.commit()
+    db.refresh(service)
+
+    # Parse features back to dict for response
+    features_dict = None
+    if service.features:
+        try:
+            features_dict = json.loads(service.features)
+        except (json.JSONDecodeError, TypeError):
+            features_dict = None
+
+    return SubscriptionServiceResponse(
+        id=service.id,
+        name=service.name,
+        description=service.description,
+        price=service.price,
+        currency=service.currency,
+        billing_period=service.billing_period,
+        is_active=service.is_active,
+        freemium_enabled=service.is_freemium_enabled,
+        premium_enabled=service.is_premium_enabled,
+        features=features_dict,
+        created_at=service.created_at,
+        updated_at=service.updated_at,
     )

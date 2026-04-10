@@ -11,11 +11,11 @@ class ScheduleReminder(BaseModel_Base):
     
     __tablename__ = "schedule_reminders"
     
-    id = Column(Integer, primary_key=True, index=True)
-    schedule_id = Column(Integer, ForeignKey('schedules.id'), nullable=False, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
+    id = Column(Integer, primary_key=True)
+    schedule_id = Column(Integer, ForeignKey('schedules.id'), nullable=False)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
     reminder_type = Column(String(20), nullable=False)  # 'instructor' or 'student'
-    recipient_email = Column(String(255), nullable=False, index=True)
+    recipient_email = Column(String(255), nullable=False)
     reminder_time = Column(DateTime, nullable=False)  # When the reminder was sent
     class_start_time = Column(DateTime, nullable=False)  # When the class actually starts
     sent_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)

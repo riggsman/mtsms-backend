@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from app.database.base import get_db_session, DefaultSessionLocal
+
+get_db = get_db_session
 from app.helpers.formater import Format_Helper
 from app.models.tenant import Tenant
 from app.models.system_config import SystemConfig

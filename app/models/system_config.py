@@ -9,8 +9,8 @@ class SystemConfig(DefaultBase):
     """
     __tablename__ = "system_config"
     
-    id = Column(Integer, primary_key=True, index=True)
-    key = Column(String(100), unique=True, nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    key = Column(String(100), unique=True, nullable=False)
     value = Column(Text, nullable=True)  # Changed from String(500) to Text to support longer JSON
     description = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)

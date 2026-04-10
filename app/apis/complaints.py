@@ -89,6 +89,7 @@ def get_complaints(
 
 def update_complaint(db: Session, complaint_id: int, complaint_update: ComplaintUpdate, institution_id: int | None = None) -> Complaint:
     """Update a complaint (typically to mark as addressed)"""
+    print("COMAPLINT STATUS FROM CLIENT  ",complaint_update.status,complaint_update.update_note)
     complaint = get_complaint(db, complaint_id, institution_id=institution_id)
     
     update_data = complaint_update.dict(exclude_unset=True)

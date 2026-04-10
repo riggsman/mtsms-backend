@@ -8,13 +8,14 @@ from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.user_roles import user_is_system_admin
 
 activity = APIRouter()
 
 @activity.get("/activities", response_model=PaginatedResponse[ActivityResponse])
 def list_activities(
     page: int = Query(1, ge=1),
-    page_size: int = Query(100, ge=1, le=100),
+    page_size: int = Query(100, ge=1, le=10000),
     entity_type: Optional[str] = Query(None),
     action: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -28,7 +29,7 @@ def list_activities(
     # Tenant users must filter by their institution_id
     institution_id = None
     if current_user:
-        is_system_admin = current_user.role and current_user.role.startswith('system_')
+        is_system_admin = user_is_system_admin(current_user)
         if not is_system_admin:
             institution_id = current_user.institution_id
             if not institution_id:

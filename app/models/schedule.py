@@ -4,8 +4,8 @@ import datetime
 
 class Schedule(BaseModel_Base):
     __tablename__ = "schedules"
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
     course_name = Column(String(200), nullable=False)
     instructor = Column(String(200), nullable=False)
     day = Column(String(50), nullable=False)  # Monday, Tuesday, etc.

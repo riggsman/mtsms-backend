@@ -6,6 +6,29 @@ from app.models.user import User
 from app.models.role import UserRole
 from app.dependencies.tenantDependency import get_db
 from app.database.base import get_db_session
+from app.helpers.user_roles import role_string_for_legacy, user_roles_list
+
+def _expand_role_aliases(role_value: str) -> list[str]:
+    """Return role aliases used across legacy/new role names."""
+    role = (role_value or "").strip().lower()
+    if role in {"staff", "teacher", "lecturer"}:
+        return ["staff", "teacher", "lecturer"]
+    return [role] if role else []
+
+
+def _expanded_roles_from_user(user: User) -> set[str]:
+    """All role strings for the user (JSON array or legacy) including staff/teacher/lecturer aliases."""
+    expanded: set[str] = set()
+    for r in user_roles_list(user):
+        expanded.update(_expand_role_aliases(r))
+    return expanded
+
+
+def _expand_allowed_roles(allowed_roles: List[UserRole]) -> set[str]:
+    expanded = set()
+    for role in allowed_roles:
+        expanded.update(_expand_role_aliases(role.value))
+    return expanded
 
 def get_current_user(
     authorization: str = Header(..., alias="Authorization"),
@@ -168,29 +191,29 @@ def require_role(*allowed_roles: UserRole):
     Also handles case-insensitive role matching for tenant roles
     """
     def role_checker(current_user: User = Depends(get_current_user_tenant)) -> User:
-        user_role = current_user.role
-        if not user_role:
+        if not user_roles_list(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User role not found"
             )
         
         allowed_role_values = [role.value for role in allowed_roles]
-        user_role_lower = user_role.lower().strip()
-        
-        # Direct match (case-insensitive)
-        if user_role_lower in [val.lower() for val in allowed_role_values]:
+        user_roles = _expanded_roles_from_user(current_user)
+        expanded_allowed = _expand_allowed_roles(list(allowed_roles))
+
+        # Direct/aliased match
+        if user_roles.intersection(expanded_allowed):
             return current_user
         
         # Check if user has system_ role and any allowed role is admin/super_admin
-        if user_role_lower.startswith('system_'):
+        if any(r.startswith('system_') for r in user_roles):
             # Allow system_ roles if checking for admin or super_admin
             if UserRole.ADMIN in allowed_roles or UserRole.SUPER_ADMIN in allowed_roles:
                 return current_user
         
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Access denied. Required role(s): {allowed_role_values}. Your role: {user_role}"
+            detail=f"Access denied. Required role(s): {allowed_role_values}. Your role: {role_string_for_legacy(current_user)}"
         )
     return role_checker
 
@@ -203,22 +226,22 @@ def require_any_role(*allowed_roles: UserRole):
     Also handles case-insensitive role matching for tenant roles
     """
     def role_checker(current_user: User = Depends(get_current_user_tenant)) -> User:
-        user_role = current_user.role
-        if not user_role:
+        if not user_roles_list(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User role not found"
             )
         
         allowed_role_values = [role.value for role in allowed_roles]
-        user_role_lower = user_role.lower().strip()
-        
-        # Direct match (case-insensitive)
-        if user_role_lower in [val.lower() for val in allowed_role_values]:
+        user_roles = _expanded_roles_from_user(current_user)
+        expanded_allowed = _expand_allowed_roles(list(allowed_roles))
+
+        # Direct/aliased match (supports comma-separated roles)
+        if user_roles.intersection(expanded_allowed):
             return current_user
         
         # Check if user has system_ role and any allowed role is admin/secretary/super_admin
-        if user_role_lower.startswith('system_'):
+        if any(r.startswith('system_') for r in user_roles):
             # Allow system_ roles if checking for admin, secretary, or super_admin
             if (UserRole.ADMIN in allowed_roles or 
                 UserRole.SECRETARY in allowed_roles or 
@@ -227,7 +250,7 @@ def require_any_role(*allowed_roles: UserRole):
         
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Access denied. Required one of: {allowed_role_values}. Your role: {user_role}"
+            detail=f"Access denied. Required one of: {allowed_role_values}. Your role: {role_string_for_legacy(current_user)}"
         )
     return role_checker
 
@@ -240,15 +263,17 @@ def require_any_role_admin(*allowed_roles: UserRole):
     Allows system_ prefixed roles (e.g., system_admin, system_super_admin) when checking for admin/secretary/super_admin roles
     """
     def role_checker(current_user: User = Depends(get_current_user)) -> User:
-        user_role = current_user.role
         allowed_role_values = [role.value for role in allowed_roles]
-        
-        # Direct match
-        if user_role in allowed_role_values:
+
+        user_roles = _expanded_roles_from_user(current_user)
+        expanded_allowed = _expand_allowed_roles(list(allowed_roles))
+
+        # Direct/aliased match
+        if user_roles.intersection(expanded_allowed):
             return current_user
         
         # Check if user has system_ role and any allowed role is admin/secretary/super_admin
-        if user_role and user_role.startswith('system_'):
+        if any(r.startswith('system_') for r in user_roles):
             # Allow system_ roles if checking for admin, secretary, or super_admin
             if (UserRole.ADMIN in allowed_roles or 
                 UserRole.SECRETARY in allowed_roles or 

@@ -19,6 +19,7 @@ class ComplaintResponse(BaseModel):
     is_anonymous: bool
     screenshots: Optional[List[str]]
     status: str
+    update_note:str
     resolved_by: Optional[str]
     resolver_role: Optional[str]
     resolved_date: Optional[datetime]
@@ -31,6 +32,7 @@ class ComplaintResponse(BaseModel):
 
 class ComplaintUpdate(BaseModel):
     status: Optional[str] = None
+    update_note: Optional[str] = None
     resolved_by: Optional[str] = None
     resolver_role: Optional[str] = None
     resolved_date: Optional[datetime] = None

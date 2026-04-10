@@ -15,6 +15,7 @@ from app.models.schedule_reminder import ScheduleReminder
 from app.models.tenant_settings import TenantSettings
 from app.services.email_service import EmailService
 from app.conf.config import settings
+from app.helpers.user_roles import role_column_contains_role
 
 logger = logging.getLogger(__name__)
 
@@ -73,15 +74,13 @@ class ScheduleReminderService:
         # Try exact match first (full name)
         full_name_parts = instructor_name.strip().split()
         
+        bind = self.db.get_bind()
         query = self.db.query(User).filter(
             and_(
                 or_(
-                    User.role == 'lecturer',
-                    User.role == 'staff',
-                    User.role == 'teacher',
-                    User.role.like('%lecturer%'),
-                    User.role.like('%staff%'),
-                    User.role.like('%teacher%')
+                    role_column_contains_role(bind, User.role, "staff"),
+                    role_column_contains_role(bind, User.role, "teacher"),
+                    role_column_contains_role(bind, User.role, "lecturer"),
                 ),
                 User.deleted_at.is_(None),  # Exclude soft-deleted users
                 User.is_active == 'active'  # Only active users

@@ -12,12 +12,12 @@ class Payment(BaseModel_Base):
     
     __tablename__ = "payments"
     
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=False, index=True)  # Multi-tenancy isolation
-    student_id = Column(Integer, ForeignKey('students.id'), nullable=False, index=True)
-    student_id_number = Column(String(70), nullable=False, index=True)  # Student matricule/ID
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
+    student_id = Column(Integer, ForeignKey('students.id'), nullable=False)
+    student_id_number = Column(String(70), nullable=False)  # Student matricule/ID
     student_name = Column(String(255), nullable=False)
-    student_email = Column(String(255), nullable=False, index=True)
+    student_email = Column(String(255), nullable=False)
     
     # Payment details
     amount = Column(Numeric(10, 2), nullable=False)
@@ -27,11 +27,11 @@ class Payment(BaseModel_Base):
     phone_number = Column(String(20), nullable=False)
     
     # Transaction details
-    transaction_id = Column(String(100), unique=True, nullable=False, index=True)
-    receipt_number = Column(String(100), unique=True, nullable=True, index=True)
+    transaction_id = Column(String(100), unique=True, nullable=False)
+    receipt_number = Column(String(100), unique=True, nullable=True)
     
     # Status
-    status = Column(String(20), default='pending', nullable=False, index=True)  # 'pending', 'paid', 'failed', 'cancelled'
+    status = Column(String(20), default='pending', nullable=False)  # 'pending', 'paid', 'failed', 'cancelled'
     
     # Payment method (for display purposes)
     payment_method = Column(String(50), nullable=True)  # e.g., 'Mobile Money', 'Bank Transfer', 'Cash'

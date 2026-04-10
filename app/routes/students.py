@@ -13,6 +13,8 @@ from app.models.user import User
 from app.models.role import UserRole
 from app.models.student import Student
 from app.helpers.pagination import PaginatedResponse
+from app.helpers.branch_scope import effective_branch_scope_id
+from app.helpers.user_roles import user_has_role, user_is_system_admin, user_requires_tenant_scope_for_data
 
 student = APIRouter()
 
@@ -28,7 +30,7 @@ def get_current_student(
     Get the current user's student record (for students only)
     This route must be defined BEFORE /students/{student_id} to avoid route conflicts
     """
-    if current_user.role != 'student':
+    if not user_has_role(current_user, "student"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This endpoint is only available for students"
@@ -93,7 +95,7 @@ def create_student_endpoint(
 @student.get("/students", response_model=PaginatedResponse[StudentResponse])
 def list_students(
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=1000),
     class_id: Optional[int] = Query(None),
     department_id: Optional[int] = Query(None),
     academic_year_id: Optional[int] = Query(None),
@@ -105,7 +107,7 @@ def list_students(
     skip = (page - 1) * page_size
     
     # Validate and extract institution_id from header
-    is_system_admin = current_user.role and current_user.role.startswith('system_')
+    is_system_admin = user_is_system_admin(current_user)
     institution_id = None
     
     if is_system_admin:
@@ -146,6 +148,8 @@ def list_students(
             # No header provided - use user's institution_id
             institution_id = current_user.institution_id
     
+    branch_scope = effective_branch_scope_id(db, current_user)
+
     # institution_id is validated - use for tenant isolation
     students, total = get_students(
         db=db,
@@ -154,7 +158,8 @@ def list_students(
         institution_id=institution_id,
         class_id=class_id,
         department_id=department_id,
-        academic_year_id=academic_year_id
+        academic_year_id=academic_year_id,
+        branch_id=branch_scope,
     )
     return PaginatedResponse.create(
         items=students,
@@ -172,7 +177,7 @@ def get_student_endpoint(
     """Get a student by ID (tenant-scoped)"""
     # Determine institution_id for filtering
     institution_id = None
-    if current_user and current_user.role and not current_user.role.startswith("system_"):
+    if current_user and user_requires_tenant_scope_for_data(current_user):
         institution_id = current_user.institution_id
     return get_student(db=db, student_id=student_id, institution_id=institution_id)
 

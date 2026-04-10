@@ -78,8 +78,9 @@ def get_tenant(
                 from jose import jwt
                 from app.conf.config import settings
                 try:
-                    # Try to decode without verification first to get payload
-                    payload_unverified = jwt.decode(token, options={"verify_signature": False})
+                    # Read unverified claims first (no signature check) to extract institution_id.
+                    # jwt.decode() in some python-jose versions requires a key positional arg.
+                    payload_unverified = jwt.get_unverified_claims(token)
                     institution_id = payload_unverified.get("institution_id")
                     
                     if institution_id:

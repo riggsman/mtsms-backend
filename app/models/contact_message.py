@@ -12,10 +12,10 @@ class ContactMessage(DefaultBase):
 
     __tablename__ = "contact_messages"
 
-    id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, nullable=True, index=True)
+    id = Column(Integer, primary_key=True)
+    institution_id = Column(Integer, nullable=True)
     name = Column(String(200), nullable=False)
-    email = Column(String(200), nullable=False, index=True)
+    email = Column(String(200), nullable=False)
     subject = Column(String(200), nullable=False)
     message = Column(Text, nullable=False)
     phone = Column(String(100), nullable=True)
