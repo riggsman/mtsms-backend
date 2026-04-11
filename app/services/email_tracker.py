@@ -21,7 +21,8 @@ class EmailTracker:
         subject: str,
         html_content: str,
         text_content: Optional[str] = None,
-        institution_id: Optional[int] = None
+        institution_id: Optional[int] = None,
+        from_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Send email with tracking and retry logic
@@ -52,7 +53,8 @@ class EmailTracker:
                     subject=subject,
                     html_content=html_content,
                     text_content=text_content,
-                    from_email=sender_email
+                    from_email=sender_email,
+                    from_name=from_name
                 )
                 
                 if success:

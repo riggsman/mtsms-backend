@@ -18,6 +18,11 @@ from app.schemas.school import (
     SchoolFeeResponse,
     SchoolWithFeesResponse
 )
+from app.schemas.fee_structure import (
+    FeeInstallmentCreate,
+    FeeInstallmentUpdate,
+    FeeInstallmentResponse
+)
 from app.apis.school import (
     get_schools,
     get_school_by_id,
@@ -30,6 +35,13 @@ from app.apis.school import (
     update_school_fee,
     delete_school_fee,
     get_all_schools_with_fees
+)
+from app.apis.fee_structure import (
+    get_installments,
+    get_installment_by_id,
+    create_installment,
+    update_installment,
+    delete_installment
 )
 
 router = APIRouter()
@@ -202,3 +214,124 @@ def bulk_create_fees(
         result.append(SchoolFeeResponse.from_model(fee))
     
     return result
+
+
+# ============================================
+# School Installment Endpoints
+# ============================================
+
+@router.get("/schools/{school_id}/installments", response_model=List[FeeInstallmentResponse])
+def list_school_installments(
+    school_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant)
+):
+    """
+    Get all active installments for a specific school.
+    """
+    institution_id = require_institution(current_user)
+    # Verify school belongs to institution
+    school = get_school_by_id(db, school_id, institution_id)
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    
+    installments = get_installments(db, institution_id, school_id)
+    return [FeeInstallmentResponse.from_installment(i) for i in installments]
+
+
+@router.post("/schools/{school_id}/installments", response_model=FeeInstallmentResponse, status_code=201)
+def create_school_installment(
+    school_id: int,
+    installment_data: FeeInstallmentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_role(
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+        UserRole.SECRETARY
+    ))
+):
+    """
+    Create a new fee installment for a specific school.
+    Admin, Super Admin, or Secretary only.
+    """
+    institution_id = require_institution(current_user)
+    # Verify school belongs to institution
+    school = get_school_by_id(db, school_id, institution_id)
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    
+    # Override school_id with the path parameter
+    installment_data.school_id = school_id
+    
+    installment = create_installment(db, institution_id, installment_data)
+    return FeeInstallmentResponse.from_installment(installment)
+
+
+@router.get("/schools/{school_id}/installments/{installment_id}", response_model=FeeInstallmentResponse)
+def get_school_installment(
+    school_id: int,
+    installment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant)
+):
+    """
+    Get a specific installment by ID for a school.
+    """
+    institution_id = require_institution(current_user)
+    # Verify school belongs to institution
+    school = get_school_by_id(db, school_id, institution_id)
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    
+    installment = get_installment_by_id(db, installment_id, institution_id, school_id)
+    return FeeInstallmentResponse.from_installment(installment)
+
+
+@router.put("/schools/{school_id}/installments/{installment_id}", response_model=FeeInstallmentResponse)
+def update_school_installment(
+    school_id: int,
+    installment_id: int,
+    installment_data: FeeInstallmentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_role(
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+        UserRole.SECRETARY
+    ))
+):
+    """
+    Update an existing fee installment for a school.
+    Admin, Super Admin, or Secretary only.
+    """
+    institution_id = require_institution(current_user)
+    # Verify school belongs to institution
+    school = get_school_by_id(db, school_id, institution_id)
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    
+    installment = update_installment(db, institution_id, installment_id, installment_data, school_id)
+    return FeeInstallmentResponse.from_installment(installment)
+
+
+@router.delete("/schools/{school_id}/installments/{installment_id}", status_code=204)
+def delete_school_installment(
+    school_id: int,
+    installment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_role(
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN
+    ))
+):
+    """
+    Delete a fee installment (soft delete - marks as inactive).
+    Super Admin only.
+    """
+    institution_id = require_institution(current_user)
+    # Verify school belongs to institution
+    school = get_school_by_id(db, school_id, institution_id)
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    
+    delete_installment(db, institution_id, installment_id, school_id)
+    return None

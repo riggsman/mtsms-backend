@@ -89,13 +89,26 @@ def update_fee_structure(
 
 def get_installments(
     db: Session,
-    tenant_id: int
+    tenant_id: int,
+    school_id: int = None
 ) -> List[FeeInstallment]:
-    """Get all active installments for a tenant"""
-    installments = db.query(FeeInstallment).filter(
+    """Get all active installments for a tenant, optionally filtered by school_id"""
+    from sqlalchemy import case
+    
+    query = db.query(FeeInstallment).filter(
         FeeInstallment.tenant_id == tenant_id,
-        FeeInstallment.is_active == 1
-    ).order_by(FeeInstallment.order_index.asc().nullslast(), FeeInstallment.due_date.asc()).all()
+        FeeInstallment.is_active == True
+    )
+    
+    if school_id is not None:
+        query = query.filter(FeeInstallment.school_id == school_id)
+    
+    # MySQL-compatible NULL handling (NULLS LAST equivalent)
+    installments = query.order_by(
+        case((FeeInstallment.order_index == None, 1), else_=0),
+        FeeInstallment.order_index.asc(),
+        FeeInstallment.due_date.asc()
+    ).all()
     
     return installments
 
@@ -103,29 +116,46 @@ def get_installments(
 def get_all_installments(
     db: Session,
     tenant_id: int,
+    school_id: int = None,
     include_inactive: bool = False
 ) -> List[FeeInstallment]:
-    """Get all installments including inactive ones"""
+    """Get all installments including inactive ones, optionally filtered by school_id"""
+    from sqlalchemy import case
+    
     query = db.query(FeeInstallment).filter(
         FeeInstallment.tenant_id == tenant_id
     )
     
-    if not include_inactive:
-        query = query.filter(FeeInstallment.is_active == 1)
+    if school_id is not None:
+        query = query.filter(FeeInstallment.school_id == school_id)
     
-    return query.order_by(FeeInstallment.order_index.asc().nullslast(), FeeInstallment.due_date.asc()).all()
+    if not include_inactive:
+        query = query.filter(FeeInstallment.is_active == True)
+    
+    # MySQL-compatible NULL handling (NULLS LAST equivalent)
+    return query.order_by(
+        case((FeeInstallment.order_index == None, 1), else_=0),
+        FeeInstallment.order_index.asc(),
+        FeeInstallment.due_date.asc()
+    ).all()
 
 
 def get_installment_by_id(
     db: Session,
     installment_id: int,
-    tenant_id: int
+    tenant_id: int,
+    school_id: int = None
 ) -> FeeInstallment:
     """Get a specific installment by ID"""
-    installment = db.query(FeeInstallment).filter(
+    query = db.query(FeeInstallment).filter(
         FeeInstallment.id == installment_id,
         FeeInstallment.tenant_id == tenant_id
-    ).first()
+    )
+    
+    if school_id is not None:
+        query = query.filter(FeeInstallment.school_id == school_id)
+    
+    installment = query.first()
     
     if not installment:
         raise NotFoundError(f"Installment with ID {installment_id} not found")
@@ -139,6 +169,8 @@ def create_installment(
     installment_data: FeeInstallmentCreate
 ) -> FeeInstallment:
     """Create a new fee installment"""
+    from sqlalchemy import case
+    
     # Parse due date
     try:
         due_date = datetime.fromisoformat(installment_data.due_date.replace('Z', '+00:00'))
@@ -148,12 +180,21 @@ def create_installment(
         except ValueError:
             raise ValidationError("Invalid due_date format. Use YYYY-MM-DD or ISO format.")
     
+    # Calculate is_due and is_overdue based on due_date
+    now = datetime.utcnow()
+    is_due = now >= due_date
+    is_overdue = now > due_date
+    
     # Get next order index if not provided
     order_index = installment_data.order_index
     if order_index is None:
         last_installment = db.query(FeeInstallment).filter(
-            FeeInstallment.tenant_id == tenant_id
-        ).order_by(FeeInstallment.order_index.desc().nullslast()).first()
+            FeeInstallment.tenant_id == tenant_id,
+            FeeInstallment.school_id == installment_data.school_id
+        ).order_by(
+            case((FeeInstallment.order_index == None, 1), else_=0),
+            FeeInstallment.order_index.desc()
+        ).first()
         
         if last_installment and last_installment.order_index is not None:
             order_index = last_installment.order_index + 1
@@ -162,11 +203,15 @@ def create_installment(
     
     installment = FeeInstallment(
         tenant_id=tenant_id,
+        school_id=installment_data.school_id,
+        level=installment_data.level,
         name=installment_data.name,
         amount=installment_data.amount,
         due_date=due_date,
         order_index=order_index,
-        is_active=1
+        is_active=True,
+        is_due=is_due,
+        is_overdue=is_overdue
     )
     
     db.add(installment)
@@ -180,10 +225,11 @@ def update_installment(
     db: Session,
     tenant_id: int,
     installment_id: int,
-    installment_data: FeeInstallmentUpdate
+    installment_data: FeeInstallmentUpdate,
+    school_id: int = None
 ) -> FeeInstallment:
     """Update an existing fee installment"""
-    installment = get_installment_by_id(db, installment_id, tenant_id)
+    installment = get_installment_by_id(db, installment_id, tenant_id, school_id)
     
     if installment_data.name is not None:
         installment.name = installment_data.name
@@ -199,6 +245,11 @@ def update_installment(
                 installment.due_date = datetime.strptime(installment_data.due_date, '%Y-%m-%d')
             except ValueError:
                 raise ValidationError("Invalid due_date format. Use YYYY-MM-DD or ISO format.")
+        
+        # Update is_due and is_overdue based on new due_date
+        now = datetime.utcnow()
+        installment.is_due = now >= installment.due_date
+        installment.is_overdue = now > installment.due_date
     
     if installment_data.order_index is not None:
         installment.order_index = installment_data.order_index
@@ -215,10 +266,11 @@ def update_installment(
 def delete_installment(
     db: Session,
     tenant_id: int,
-    installment_id: int
+    installment_id: int,
+    school_id: int = None
 ) -> bool:
     """Soft delete a fee installment by marking it inactive"""
-    installment = get_installment_by_id(db, installment_id, tenant_id)
+    installment = get_installment_by_id(db, installment_id, tenant_id, school_id)
     installment.is_active = 0
     db.commit()
     return True
@@ -227,10 +279,11 @@ def delete_installment(
 def permanently_delete_installment(
     db: Session,
     tenant_id: int,
-    installment_id: int
+    installment_id: int,
+    school_id: int = None
 ) -> bool:
     """Permanently delete a fee installment"""
-    installment = get_installment_by_id(db, installment_id, tenant_id)
+    installment = get_installment_by_id(db, installment_id, tenant_id, school_id)
     db.delete(installment)
     db.commit()
     return True

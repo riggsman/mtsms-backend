@@ -16,6 +16,7 @@ class StudentResponse(BaseModel):
     phone: str
     student_id: str
     class_id: int
+    level: str
     department_id: int
     academic_year_id: int
     guardian_id: int
@@ -35,6 +36,7 @@ class StudentRequest(BaseModel):
     phone: str
     student_id: str
     class_id: int
+    level: str
     department_id: int
     academic_year_id: int
     branch_id: Optional[int] = None

@@ -101,6 +101,22 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
     
     # Send registration email asynchronously (non-blocking)
     lecturer_name = f"{teacher.firstname} {teacher.lastname}"
+    
+    # Get institution name if available
+    institution_name = None
+    try:
+        from app.models.tenant import Tenant
+        from app.database.base import get_db_session
+        global_db = next(get_db_session())
+        try:
+            tenant = global_db.query(Tenant).filter(Tenant.id == institution_id).first()
+            if tenant:
+                institution_name = tenant.name
+        finally:
+            global_db.close()
+    except Exception:
+        pass  # If we can't get institution name, continue without it
+
     run_async_safe(
         EmailService.send_lecturer_registration_email(
             lecturer_name=lecturer_name,
@@ -108,7 +124,7 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
             username=username,
             password=default_password,  # Send plain password for first login
             employee_id=teacher.employee_id,
-            institution_name=None  # Can be enhanced to fetch institution name if needed
+            institution_name=institution_name
         )
     )
     

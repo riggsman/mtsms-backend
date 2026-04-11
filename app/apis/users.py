@@ -152,6 +152,9 @@ def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = N
                 )
                 subject = f"{settings.APP_NAME} - Student Account Registration"
                 
+                # Determine sender name based on user type
+                sender_name = institution_name if new_user.user_type == "TENANT" else settings.APP_NAME
+                
                 await EmailTracker.send_with_tracking(
                     db=db,
                     sender_email=settings.SMTP_FROM_EMAIL,
@@ -159,7 +162,8 @@ def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = N
                     subject=subject,
                     html_content=html_content,
                     text_content=text_content,
-                    institution_id=new_user.institution_id
+                    institution_id=new_user.institution_id,
+                    from_name=sender_name
                 )
             else:
                 # Use staff registration email with tracking
@@ -179,6 +183,9 @@ def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = N
                 )
                 subject = f"{settings.APP_NAME} - Staff Account Created"
                 
+                # Determine sender name based on user type
+                sender_name = institution_name if new_user.user_type == "TENANT" else settings.APP_NAME
+                
                 await EmailTracker.send_with_tracking(
                     db=db,
                     sender_email=settings.SMTP_FROM_EMAIL,
@@ -186,7 +193,8 @@ def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = N
                     subject=subject,
                     html_content=html_content,
                     text_content=text_content,
-                    institution_id=new_user.institution_id
+                    institution_id=new_user.institution_id,
+                    from_name=sender_name
                 )
         
         run_async_safe(send_tracked_email())
@@ -623,12 +631,29 @@ def change_password(db: Session, user_id: int, current_password: str, new_passwo
             is_admin_change = performer.id != user.id if performer else False
             admin_name = get_user_display_name(performer) if is_admin_change else None
             
+            # Get institution name if available
+            institution_name = None
+            if institution_id:
+                try:
+                    from app.models.tenant import Tenant
+                    from app.database.base import get_db_session
+                    global_db = next(get_db_session())
+                    try:
+                        tenant = global_db.query(Tenant).filter(Tenant.id == institution_id).first()
+                        if tenant:
+                            institution_name = tenant.name
+                    finally:
+                        global_db.close()
+                except Exception:
+                    pass  # If we can't get institution name, continue without it
+
             run_async_safe(
                 EmailService.send_password_change_email(
                     user_name=user_display_name,
                     user_email=user.email,
                     changed_by_admin=is_admin_change,
-                    admin_name=admin_name
+                    admin_name=admin_name,
+                    institution_name=institution_name
                 )
             )
         except Exception as e:

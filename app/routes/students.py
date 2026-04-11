@@ -140,6 +140,7 @@ def list_students(
                     )
                 institution_id = header_institution_id
             except (ValueError, TypeError):
+                # error(f"Invalid institution_id format: {x_institution_id}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Invalid institution_id format: {x_institution_id}"

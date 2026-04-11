@@ -21,7 +21,6 @@ async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optio
     
     # Check if domain already exists
     if tenant.domain:
-        from app.models.tenant import Tenant
         existing_domain = db.query(Tenant).filter(Tenant.domain == tenant.domain).first()
         if existing_domain:
             raise ConflictError(f"Tenant with domain '{tenant.domain}' already exists")

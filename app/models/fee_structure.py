@@ -1,7 +1,7 @@
 """
 Fee Structure Model - Stores fee settings and installments per school/tenant
 """
-from sqlalchemy import Column, String, Integer, DateTime, Numeric, ForeignKey, Index
+from sqlalchemy import Column, String, Integer, DateTime, Numeric, ForeignKey, Index, Boolean
 from app.database.base import DefaultBase
 import datetime
 
@@ -27,17 +27,21 @@ class FeeStructure(DefaultBase):
 
 
 class FeeInstallment(DefaultBase):
-    """Fee Installment model - stores individual payment installments"""
+    """Fee Installment model - stores individual payment installments per school and level"""
     
     __tablename__ = "fee_installments"
     
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, nullable=False, index=True)  # Reference to tenant/institution
+    school_id = Column(Integer, nullable=False, index=True)  # Reference to school (Engineering, Business, etc.)
+    level = Column(String(20), nullable=False)  # HND, DEGREE, MASTERS
     name = Column(String(255), nullable=False)  # e.g., "First Installment", "Registration Fee"
     amount = Column(Numeric(10, 2), nullable=False)
     due_date = Column(DateTime, nullable=False)
     order_index = Column(Integer, nullable=True, default=0)  # For ordering installments
-    is_active = Column(Integer, default=1, nullable=False)  # 1 = active, 0 = inactive
+    is_active = Column(Boolean, default=True, nullable=False)  # True = active, False = inactive
+    is_due = Column(Boolean, default=False, nullable=False)  # True = due date has arrived
+    is_overdue = Column(Boolean, default=False, nullable=False)  # True = past due date
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
@@ -45,5 +49,7 @@ class FeeInstallment(DefaultBase):
     
     __table_args__ = (
         Index('ix_fee_installment_tenant', 'tenant_id'),
+        Index('ix_fee_installment_school', 'school_id'),
         Index('ix_fee_installment_due_date', 'due_date'),
+        Index('ix_fee_installment_school_level', 'school_id', 'level'),
     )

@@ -21,7 +21,8 @@ class TenantSettingsRequest(BaseModel):
     email_reminder_time: Optional[int] = None  # Minutes before class to send reminder
     branches_enabled: Optional[bool] = None  # Multi-campus mode
 
-class TenantSettingsResponse(BaseModel):
+
+class TenantSettings(BaseModel):
     id: int
     institution_id: int
     matricule_format: Optional[Any] = None  # Accept dict or JSON string from DB
@@ -29,9 +30,10 @@ class TenantSettingsResponse(BaseModel):
     logo: Optional[str] = None  # Path to tenant logo file
     email_reminder_time: Optional[int] = 30  # Minutes before class to send reminder (default: 30)
     branches_enabled: bool = False
-    category: str
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
 
 
     class Config:
@@ -50,7 +52,7 @@ class TenantSettingsResponse(BaseModel):
                 'matricule_format': getattr(data, 'matricule_format', None),
                 'is_matricule_format_set': getattr(data, 'is_matricule_format_set', False),
                 'logo': getattr(data, 'logo', None),
-                'category': getattr(data, 'category', None),
+                # 'category': getattr(data, 'category', None),
                 'email_reminder_time': getattr(data, 'email_reminder_time', 30),
                 'branches_enabled': getattr(data, 'branches_enabled', False),
                 'created_at': getattr(data, 'created_at', None),
@@ -73,3 +75,8 @@ class TenantSettingsResponse(BaseModel):
                 data['email_reminder_time'] = 30
         
         return data
+
+class TenantSettingsResponse(TenantSettings):
+    category: str
+   
+    

@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.database.base import DefaultBase, engine
+from app.database.base import DefaultBase, engine,DefaultSessionLocal
 from app.database.sessionManager import BaseModel_Base
 from app.dependencies import auth
 from app.routes import (
@@ -38,6 +38,7 @@ from app.routes import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from app.conf.config import settings
+from scripts.populate_classes import seed_default_classes
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -170,6 +171,9 @@ from app.models.student_payment import StudentPayment, StudentPaymentInstallment
 def startup():
     DefaultBase.metadata.create_all(bind=engine)
     BaseModel_Base.metadata.create_all(bind=engine)
+    # Seed default data
+    with DefaultSessionLocal() as session:
+        seed_default_classes(session)
     
     # Start schedule reminder scheduler
     try:

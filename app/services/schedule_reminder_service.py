@@ -317,6 +317,21 @@ class ScheduleReminderService:
         
         # Process each institution's schedules with their reminder time
         for institution_id, inst_schedules in schedules_by_institution.items():
+            # Get institution name if available
+            institution_name = None
+            try:
+                from app.models.tenant import Tenant
+                from app.database.base import get_db_session
+                global_db = next(get_db_session())
+                try:
+                    tenant = global_db.query(Tenant).filter(Tenant.id == institution_id).first()
+                    if tenant:
+                        institution_name = tenant.name
+                finally:
+                    global_db.close()
+            except Exception:
+                pass  # If we can't get institution name, continue without it
+
             # Get reminder time for this institution
             reminder_time = self.get_reminder_time(institution_id)
             
@@ -342,15 +357,16 @@ class ScheduleReminderService:
                                 class_start_time,
                                 institution_id
                             ):
-                                success = await EmailService.send_class_reminder_to_instructor(
-                                    instructor_email=instructor_email,
-                                    instructor_name=schedule.instructor,
-                                    course_name=schedule.course_name,
-                                    day=schedule.day,
-                                    start_time=schedule.start_time,
-                                    end_time=schedule.end_time,
-                                    room=schedule.room or 'TBA'
-                                )
+                                    success = await EmailService.send_class_reminder_to_instructor(
+                                        instructor_email=instructor_email,
+                                        instructor_name=schedule.instructor,
+                                        course_name=schedule.course_name,
+                                        day=schedule.day,
+                                        start_time=schedule.start_time,
+                                        end_time=schedule.end_time,
+                                        room=schedule.room or 'TBA',
+                                        institution_name=institution_name
+                                    )
                                 
                                 self.record_reminder_sent(
                                     schedule_id=schedule.id,
@@ -399,7 +415,8 @@ class ScheduleReminderService:
                                     start_time=schedule.start_time,
                                     end_time=schedule.end_time,
                                     room=schedule.room or 'TBA',
-                                    instructor_name=schedule.instructor
+                                    instructor_name=schedule.instructor,
+                                    institution_name=institution_name
                                 )
                                 
                                 # Record reminders for each student

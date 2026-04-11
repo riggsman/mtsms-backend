@@ -17,6 +17,8 @@ class Student(BaseModel_Base):
     phone = Column(String(200), nullable=False)
     student_id = Column(String(70), nullable=False, unique=True)  # Student registration number
     class_id = Column(Integer, nullable=False)
+    level = Column(String(20), nullable=False)
+    type = Column(String(20), nullable=False, default="Undergraduate")  # regular, transfer, etc.
     department_id = Column(Integer, nullable=False)
     academic_year_id = Column(Integer, nullable=False)
     guardian_id = Column(Integer, nullable=False)

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.schemas.tenant_settings import TenantSettingsRequest, TenantSettingsResponse
+from app.schemas.tenant_settings import TenantSettings, TenantSettingsRequest, TenantSettingsResponse
 from app.apis.tenant_settings import (
     get_tenant_category,
     get_tenant_settings,
@@ -29,7 +29,7 @@ def get_settings(
     print("INSTITUTION ID FROM CLIENT ", institution_id)
     category = get_tenant_category(db, institution_id)
     settings = get_tenant_settings(db, institution_id)
-    print("INSTITUTION ID FROM SERVER ", settings.category)
+    print("INSTITUTION ID FROM SERVER ", category.category)
     if not settings or not category:
         # Return default response if no settings exist
         return TenantSettingsResponse(
@@ -41,7 +41,16 @@ def get_settings(
     
     # model_validator will handle JSON string parsing automatically
      
-    return TenantSettingsResponse.model_validate(settings)
+#     return TenantSettingsResponse.model_validate({
+#      **settings.__dict__,   # unpack settings fields
+#     "category": category.category  # add category from tenant
+# })
+    settings_model = TenantSettings.model_validate(settings)
+
+    return TenantSettingsResponse(
+        **settings_model.model_dump(),
+        category=category.category
+    )
 
 @tenant_settings_router.put("/tenant-settings", response_model=TenantSettingsResponse)
 def update_settings(

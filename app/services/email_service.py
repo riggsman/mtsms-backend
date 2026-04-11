@@ -177,7 +177,8 @@ class EmailService:
             to_email=admin_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            from_name=settings.APP_NAME
         )
     
     @staticmethod
@@ -192,7 +193,7 @@ class EmailService:
         must_change_password: bool = True
     ) -> bool:
         """Send email to staff after registration"""
-        subject = f"Welcome to {settings.APP_NAME} - Staff Account Created"
+        subject = f"Welcome to {institution_name or settings.APP_NAME} - Staff Account Created"
         
         password_instruction = ""
         if must_change_password:
@@ -216,7 +217,7 @@ class EmailService:
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Welcome to {settings.APP_NAME}!</h1>
+                    <h1>Welcome to {institution_name or settings.APP_NAME}!</h1>
                 </div>
                 <div class="content">
                     <p>Dear {lecturer_name},</p>
@@ -236,7 +237,7 @@ class EmailService:
                     <p>If you have any questions, please contact your administrator.</p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {institution_name or settings.APP_NAME}</p>
                 </div>
             </div>
         </body>
@@ -244,7 +245,7 @@ class EmailService:
         """
         
         text_content = f"""
-        Welcome to {settings.APP_NAME}!
+        Welcome to {institution_name or settings.APP_NAME}!
         
         Dear {lecturer_name},
         
@@ -261,14 +262,15 @@ class EmailService:
         
         If you have any questions, please contact your administrator.
         
-        This is an automated message from {settings.APP_NAME}
+        This is an automated message from {institution_name or settings.APP_NAME}
         """
         
         return await EmailService.send_email(
             to_email=lecturer_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            from_name=institution_name or settings.APP_NAME
         )
     
     @staticmethod
@@ -285,6 +287,7 @@ class EmailService:
         """Get lecturer registration email content (HTML and text) without sending"""
         password_instruction = ""
         tenant_label = institution_name or "your institution"
+        app_label = institution_name or settings.APP_NAME
         if must_change_password:
             password_instruction = "You will be required to change your password on your first login for security purposes."
         else:
@@ -306,7 +309,7 @@ class EmailService:
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Welcome to {settings.APP_NAME}!</h1>
+                    <h1>Welcome to {app_label}!</h1>
                 </div>
                 <div class="content">
                     <p>Dear {lecturer_name},</p>
@@ -327,7 +330,7 @@ class EmailService:
                     <p><em>Powered by EduSphere</em></p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME} for {tenant_label}</p>
+                    <p>This is an automated message from {app_label} for {tenant_label}</p>
                     <p><strong>Powered by EduSphere</strong></p>
                 </div>
             </div>
@@ -336,7 +339,7 @@ class EmailService:
         """
         
         text_content = f"""
-        Welcome to {settings.APP_NAME}!
+        Welcome to {app_label}!
         
         Dear {lecturer_name},
         
@@ -353,7 +356,7 @@ class EmailService:
         
         If you have any questions, please contact your administrator.
         
-        This is an automated message from {settings.APP_NAME} for {tenant_label}
+        This is an automated message from {app_label} for {tenant_label}
         Powered by EduSphere
         """
         
@@ -367,7 +370,8 @@ class EmailService:
         institution_name: Optional[str] = None
     ) -> bool:
         """Send email to student after registration"""
-        subject = f"Welcome to {settings.APP_NAME} - Student Registration Complete"
+        app_label = institution_name or settings.APP_NAME
+        subject = f"Welcome to {app_label} - Student Registration Complete"
         
         html_content = f"""
         <!DOCTYPE html>
@@ -385,7 +389,7 @@ class EmailService:
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Welcome to {settings.APP_NAME}!</h1>
+                    <h1>Welcome to {app_label}!</h1>
                 </div>
                 <div class="content">
                     <p>Dear {student_name},</p>
@@ -403,7 +407,7 @@ class EmailService:
                     <p>If you have any questions or need assistance, please contact your institution's administration office.</p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {app_label}</p>
                 </div>
             </div>
         </body>
@@ -411,7 +415,7 @@ class EmailService:
         """
         
         text_content = f"""
-        Welcome to {settings.APP_NAME}!
+        Welcome to {app_label}!
         
         Dear {student_name},
         
@@ -426,14 +430,15 @@ class EmailService:
         
         If you have any questions or need assistance, please contact your institution's administration office.
         
-        This is an automated message from {settings.APP_NAME}
+        This is an automated message from {app_label}
         """
         
         return await EmailService.send_email(
             to_email=student_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            from_name=institution_name or settings.APP_NAME
         )
     
     @staticmethod
@@ -449,6 +454,7 @@ class EmailService:
         """Get student registration email content with password (HTML and text) without sending"""
         password_instruction = ""
         tenant_label = institution_name or "your institution"
+        app_label = institution_name or settings.APP_NAME
         if must_change_password:
             password_instruction = "You will be required to change your password on your first login for security purposes."
         else:
@@ -470,7 +476,7 @@ class EmailService:
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Welcome to {settings.APP_NAME}!</h1>
+                    <h1>Welcome to {app_label}!</h1>
                 </div>
                 <div class="content">
                     <p>Dear {student_name},</p>
@@ -491,7 +497,7 @@ class EmailService:
                     <p><em>Powered by EduSphere</em></p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME} for {tenant_label}</p>
+                    <p>This is an automated message from {app_label} for {tenant_label}</p>
                     <p><strong>Powered by EduSphere</strong></p>
                 </div>
             </div>
@@ -500,7 +506,7 @@ class EmailService:
         """
         
         text_content = f"""
-        Welcome to {settings.APP_NAME}!
+        Welcome to {app_label}!
         
         Dear {student_name},
         
@@ -517,7 +523,7 @@ class EmailService:
         
         If you have any questions or need assistance, please contact your institution's administration office.
         
-        This is an automated message from {settings.APP_NAME} for {tenant_label}
+        This is an automated message from {app_label} for {tenant_label}
         Powered by EduSphere
         """
         
@@ -535,7 +541,8 @@ class EmailService:
         login_url: Optional[str] = None
     ) -> bool:
         """Send email to student when password is assigned"""
-        subject = f"{settings.APP_NAME} - Your Account Password Has Been Assigned"
+        app_label = institution_name or settings.APP_NAME
+        subject = f"{app_label} - Your Account Password Has Been Assigned"
         
         # Determine instructions based on must_change_password setting
         if must_change_password:
@@ -607,7 +614,7 @@ If you suspect your account has been compromised, please contact your administra
                     <p>If you have any questions or need assistance, please contact your institution's administration office.</p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {app_label}</p>
                     <p><strong>Please keep this email secure and do not share your password with anyone.</strong></p>
                 </div>
             </div>
@@ -634,7 +641,7 @@ If you suspect your account has been compromised, please contact your administra
         
         If you have any questions or need assistance, please contact your institution's administration office.
         
-        This is an automated message from {settings.APP_NAME}
+        This is an automated message from {app_label}
         
         Please keep this email secure and do not share your password with anyone.
         """
@@ -643,7 +650,8 @@ If you suspect your account has been compromised, please contact your administra
             to_email=student_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            from_name=institution_name or settings.APP_NAME
         )
     
     @staticmethod
@@ -659,6 +667,7 @@ If you suspect your account has been compromised, please contact your administra
     ) -> tuple[str, str]:
         """Get student password assignment email content (HTML and text) without sending"""
         # Determine instructions based on must_change_password setting
+        app_label = institution_name or settings.APP_NAME
         if must_change_password:
             password_instructions = """
                     <div class="warning">
@@ -728,7 +737,7 @@ If you suspect your account has been compromised, please contact your administra
                     <p>If you have any questions or need assistance, please contact your institution's administration office.</p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {app_label}</p>
                     <p><strong>Please keep this email secure and do not share your password with anyone.</strong></p>
                 </div>
             </div>
@@ -755,7 +764,7 @@ If you suspect your account has been compromised, please contact your administra
         
         If you have any questions or need assistance, please contact your institution's administration office.
         
-        This is an automated message from {settings.APP_NAME}
+        This is an automated message from {app_label}
         
         Please keep this email secure and do not share your password with anyone.
         """
@@ -767,10 +776,12 @@ If you suspect your account has been compromised, please contact your administra
         user_name: str,
         user_email: str,
         changed_by_admin: bool = False,
-        admin_name: Optional[str] = None
+        admin_name: Optional[str] = None,
+        institution_name: Optional[str] = None
     ) -> bool:
         """Send email notification when password is changed"""
-        subject = f"{settings.APP_NAME} - Password Changed Successfully"
+        app_label = institution_name or settings.APP_NAME
+        subject = f"{app_label} - Password Changed Successfully"
         
         change_info = f"by administrator {admin_name}" if changed_by_admin and admin_name else "by you"
         
@@ -804,7 +815,7 @@ If you suspect your account has been compromised, please contact your administra
                     <p>If you have any questions or concerns, please contact our support team.</p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {app_label}</p>
                 </div>
             </div>
         </body>
@@ -823,14 +834,15 @@ If you suspect your account has been compromised, please contact your administra
         
         If you have any questions or concerns, please contact our support team.
         
-        This is an automated message from {settings.APP_NAME}
+        This is an automated message from {app_label}
         """
         
         return await EmailService.send_email(
             to_email=user_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            from_name=institution_name or settings.APP_NAME
         )
     
     @staticmethod
@@ -843,7 +855,8 @@ If you suspect your account has been compromised, please contact your administra
         login_url: Optional[str] = None
     ) -> bool:
         """Send email to student informing them of their account suspension"""
-        subject = f"{settings.APP_NAME} - Account Suspension Notice"
+        app_label = institution_name or settings.APP_NAME
+        subject = f"{app_label} - Account Suspension Notice"
         
         html_content = f"""
         <!DOCTYPE html>
@@ -885,7 +898,7 @@ If you suspect your account has been compromised, please contact your administra
                     <p>We encourage you to address any concerns promptly to resolve this matter.</p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {app_label}</p>
                 </div>
             </div>
         </body>
@@ -911,14 +924,15 @@ If you suspect your account has been compromised, please contact your administra
         
         We encourage you to address any concerns promptly to resolve this matter.
         
-        This is an automated message from {settings.APP_NAME}
+        This is an automated message from {app_label}
         """
         
         return await EmailService.send_email(
             to_email=student_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            from_name=institution_name or settings.APP_NAME
         )
     
     @staticmethod
@@ -931,6 +945,7 @@ If you suspect your account has been compromised, please contact your administra
         login_url: Optional[str] = None
     ) -> tuple[str, str]:
         """Get student suspension email content (HTML and text) without sending"""
+        app_label = institution_name or settings.APP_NAME
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -971,7 +986,7 @@ If you suspect your account has been compromised, please contact your administra
                     <p>We encourage you to address any concerns promptly to resolve this matter.</p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {app_label}</p>
                 </div>
             </div>
         </body>
@@ -997,14 +1012,15 @@ If you suspect your account has been compromised, please contact your administra
         
         We encourage you to address any concerns promptly to resolve this matter.
         
-        This is an automated message from {settings.APP_NAME}
+        This is an automated message from {app_label}
         """
         
         return html_content, text_content
 
     @staticmethod
-    def send_user_update_email(user: User):
-        subject = f"{settings.APP_NAME} - Role Changed Successfully"
+    def send_user_update_email(user: User, institution_name: Optional[str] = None):
+        app_label = institution_name or settings.APP_NAME
+        subject = f"{app_label} - Role Changed Successfully"
         
         # change_info = f"by administrator {admin_name}" if changed_by_admin and admin_name else "by you"
         change_info = "User email changed"
@@ -1032,7 +1048,7 @@ If you suspect your account has been compromised, please contact your administra
                     <p>If you have any questions or concerns, please contact your administrator immediately.</p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {app_label}</p>
                 </div>
             </div>
         </body>
@@ -1048,14 +1064,15 @@ If you suspect your account has been compromised, please contact your administra
             
             If you have any questions or concerns, please contact your administrator immediately.
             
-            This is an automated message from {settings.APP_NAME}
+            This is an automated message from {app_label}
             """
 
         send_email_background(
             to_email=user.email,
-            subject=f'Your {settings.APP_NAME} account has been updated',
+            subject=f'Your {app_label} account has been updated',
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            from_name=institution_name or settings.APP_NAME
         )
 
     @staticmethod
@@ -1064,10 +1081,12 @@ If you suspect your account has been compromised, please contact your administra
         user_email:str,
         role: list[UserRole],
         changed_by_admin: bool = False,
-        admin_name: Optional[str] = None
+        admin_name: Optional[str] = None,
+        institution_name: Optional[str] = None
     ) -> bool:
         """Send email notification when role is changed"""
-        subject = f"{settings.APP_NAME} - Role Changed Successfully"
+        app_label = institution_name or settings.APP_NAME
+        subject = f"{app_label} - Role Changed Successfully"
         
         change_info = f"by administrator {admin_name}" if changed_by_admin and admin_name else "by you"
         
@@ -1095,7 +1114,7 @@ If you suspect your account has been compromised, please contact your administra
                     <p>If you have any questions or concerns, please contact your administrator immediately.</p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from {settings.APP_NAME}</p>
+                    <p>This is an automated message from {app_label}</p>
                 </div>
             </div>
         </body>
@@ -1111,14 +1130,15 @@ If you suspect your account has been compromised, please contact your administra
         
         If you have any questions or concerns, please contact your administrator immediately.
         
-        This is an automated message from {settings.APP_NAME}
+        This is an automated message from {app_label}
         """
         
         return await EmailService.send_email(
             to_email=user_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            from_name=institution_name or settings.APP_NAME
         )
 
 
@@ -1131,7 +1151,8 @@ If you suspect your account has been compromised, please contact your administra
         day: str,
         start_time: str,
         end_time: str,
-        room: str
+        room: str,
+        institution_name: Optional[str] = None
     ) -> bool:
         """
         Send class reminder email to instructor/lecturer
@@ -1144,10 +1165,12 @@ If you suspect your account has been compromised, please contact your administra
             start_time: Class start time
             end_time: Class end time
             room: Room number/location
+            institution_name: Institution name
         
         Returns:
             True if email sent successfully
         """
+        app_label = institution_name or settings.APP_NAME
         subject = f"Class Reminder: {course_name} - {day} at {start_time}"
         
         html_content = f"""
@@ -1166,7 +1189,7 @@ If you suspect your account has been compromised, please contact your administra
                 <p>The class will start in <strong>30 minutes</strong>.</p>
                 <p>Please ensure you are prepared and arrive on time.</p>
                 <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-                <p style="color: #666; font-size: 12px;">This is an automated reminder from {settings.APP_NAME}.</p>
+                <p style="color: #666; font-size: 12px;">This is an automated reminder from {app_label}.</p>
             </div>
         </body>
         </html>
@@ -1187,14 +1210,15 @@ If you suspect your account has been compromised, please contact your administra
         The class will start in 30 minutes.
         Please ensure you are prepared and arrive on time.
         
-        This is an automated reminder from {settings.APP_NAME}.
+        This is an automated reminder from {app_label}.
         """
         
         return await EmailService.send_email(
             to_email=instructor_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            from_name=institution_name or settings.APP_NAME
         )
     
     @staticmethod
@@ -1205,7 +1229,8 @@ If you suspect your account has been compromised, please contact your administra
         start_time: str,
         end_time: str,
         room: str,
-        instructor_name: str
+        instructor_name: str,
+        institution_name: Optional[str] = None
     ) -> bool:
         """
         Send class reminder email to students (bulk)
@@ -1218,6 +1243,7 @@ If you suspect your account has been compromised, please contact your administra
             end_time: Class end time
             room: Room number/location
             instructor_name: Instructor's name
+            institution_name: Institution name
         
         Returns:
             True if email sent successfully
@@ -1226,6 +1252,7 @@ If you suspect your account has been compromised, please contact your administra
             logger.warning("No student emails provided for reminder")
             return False
         
+        app_label = institution_name or settings.APP_NAME
         subject = f"Class Reminder: {course_name} - {day} at {start_time}"
         
         html_content = f"""
@@ -1245,7 +1272,7 @@ If you suspect your account has been compromised, please contact your administra
                 <p>The class will start in <strong>30 minutes</strong>.</p>
                 <p>Please ensure you are prepared and arrive on time.</p>
                 <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-                <p style="color: #666; font-size: 12px;">This is an automated reminder from {settings.APP_NAME}.</p>
+                <p style="color: #666; font-size: 12px;">This is an automated reminder from {app_label}.</p>
             </div>
         </body>
         </html>
@@ -1267,7 +1294,7 @@ If you suspect your account has been compromised, please contact your administra
         The class will start in 30 minutes.
         Please ensure you are prepared and arrive on time.
         
-        This is an automated reminder from {settings.APP_NAME}.
+        This is an automated reminder from {app_label}.
         """
         
         # Send to each student individually (bulk sending can be optimized later)
@@ -1278,7 +1305,8 @@ If you suspect your account has been compromised, please contact your administra
                     to_email=email,
                     subject=subject,
                     html_content=html_content,
-                    text_content=text_content
+                    text_content=text_content,
+                    from_name=institution_name or settings.APP_NAME
                 )
                 if success:
                     success_count += 1
@@ -1293,7 +1321,8 @@ def send_email_background(
     to_email: str,
     subject: str,
     html_content: str,
-    text_content: Optional[str] = None
+    text_content: Optional[str] = None,
+    from_name: Optional[str] = None
 ):
     """Helper function to send email in background task"""
     from app.helpers.async_helper import run_async_safe
@@ -1302,6 +1331,7 @@ def send_email_background(
             to_email=to_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            from_name=from_name
         )
     )

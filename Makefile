@@ -15,3 +15,6 @@ up:
 	@pid=$$(lsof -ti:8000); if [ ! -z "$$pid" ]; then kill -9 $$pid; fi
 	@echo "Launching application..."
 	source env/Scripts/activate && uvicorn server:app --reload --port 8000 --host 0.0.0.0
+
+test:
+	pytest -v --tb=short --disable-warnings app/tests/test_tenants.py 

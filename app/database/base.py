@@ -7,6 +7,7 @@ from app.conf.config import settings
 engine = create_engine(settings.DATABASE_URL)
 DefaultSessionLocal = sessionmaker(autocommit=False,autoflush=False,bind=engine)
 DefaultBase = declarative_base()
+Base = DefaultBase
 
 def get_db_session():
     db_session = DefaultSessionLocal()

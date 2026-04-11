@@ -15,7 +15,8 @@ from app.models.tenant import Tenant
 from app.authentication.authenticator import hash_password
 from app.database.base import get_db_session
 from app.dependencies.tenantDependency import get_db
-from app.dependencies.auth import get_current_user_tenant
+from app.dependencies.auth import get_current_user_tenant, get_current_user
+from app.dependencies.auth import get_current_user as get_current_user_dep
 
 # Create in-memory SQLite database for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -53,6 +54,26 @@ def client(db, test_admin_user):
     
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user_tenant] = override_get_current_user
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+@pytest.fixture(scope="function")
+def sysadmin_client(db, test_system_admin):
+    """Create a test client with system admin user"""
+    def override_get_db():
+        try:
+            yield db
+        finally:
+            pass
+    
+    def override_get_current_user():
+        return test_system_admin
+    
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user_tenant] = override_get_current_user
+    app.dependency_overrides[get_current_user] = override_get_current_user
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -62,6 +83,7 @@ def test_tenant(db):
     """Create a test tenant"""
     tenant = Tenant(
         name="test_school",
+        category="school",
         database_url="sqlite:///./test_tenant.db"
     )
     db.add(tenant)
@@ -112,6 +134,49 @@ def test_staff_user(db):
     return user
 
 @pytest.fixture
+def test_system_admin(db):
+    """Create a system admin user"""
+    user = User(
+        institution_id=None,
+        firstname="System",
+        lastname="Admin",
+        email="system@test.com",
+        phone="+1234567892",
+        username="sysadmin",
+        password=hash_password("sysadmin123"),
+        role=["super_admin"],
+        user_type="SYSTEM",
+        is_active="active",
+        gender="Male",
+        address="System Office"
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+@pytest.fixture
+def test_student_user(db):
+    """Create a test student user"""
+    user = User(
+        institution_id=1,
+        firstname="Student",
+        lastname="User",
+        email="student@test.com",
+        phone="+1234567892",
+        username="student",
+        password=hash_password("student123"),
+        role=["student"],
+        is_active="active",
+        gender="Male",
+        address="Test Address"
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+@pytest.fixture
 def admin_token(client, test_admin_user):
     """Get admin authentication token"""
     response = client.post(
@@ -119,6 +184,42 @@ def admin_token(client, test_admin_user):
         json={
             "username": "admin",
             "password": "admin123"
+        },
+        headers={"X-Tenant-Name": "test_school"}
+    )
+    assert response.status_code == 200
+    return response.json()["access_token"]
+
+@pytest.fixture
+def sysadmin_token(sysadmin_client, test_system_admin):
+    """Get system admin authentication token"""
+    response = sysadmin_client.post(
+        "/auth/v1/login",
+        json={
+            "username": "sysadmin",
+            "password": "sysadmin123"
+        }
+    )
+    if response.status_code != 200:
+        response = sysadmin_client.post(
+            "/auth/v1/login",
+            json={
+                "username": "sysadmin",
+                "password": "sysadmin123"
+            },
+            headers={"X-Tenant-Name": "system"}
+        )
+    assert response.status_code == 200
+    return response.json()["access_token"]
+
+@pytest.fixture
+def student_token(client, test_student_user):
+    """Get student authentication token"""
+    response = client.post(
+        "/auth/v1/login",
+        json={
+            "username": "student",
+            "password": "student123"
         },
         headers={"X-Tenant-Name": "test_school"}
     )
