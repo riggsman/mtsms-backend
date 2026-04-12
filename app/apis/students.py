@@ -197,6 +197,7 @@ def get_student(db: Session, student_id: int, institution_id: Optional[int] = No
     student = query.first()
     if not student:
         raise NotFoundError(f"Student with ID {student_id} not found")
+    print(f"DEBUG STUDENT DATA RECEIVED {student.school_id}")
     return student
 
 

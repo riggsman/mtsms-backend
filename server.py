@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from app.database.base import DefaultBase, engine,DefaultSessionLocal
 from app.database.sessionManager import BaseModel_Base
 from app.dependencies import auth
@@ -33,8 +34,9 @@ from app.routes import (
     payments,
     branches,
     fee_structure,
-    schools,
+    # schools,  # Disabled - schools table was dropped by migrations
     student_payments,
+    certificates,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from app.conf.config import settings
@@ -47,27 +49,33 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS configuration
-# If allow_origins is ["*"], we cannot use allow_credentials=True
-# We use allow_origin_regex to allow everything while still allowing credentials
-is_allow_all_origins = "*" in settings.cors_origins_list
-
-# Browsers send Origin on preflight (OPTIONS). If it is not in allow_origins exactly,
-# Starlette returns 400 for OPTIONS. This regex allows any port on localhost / 127.0.0.1 / ::1
-# so Vite (5173), CRA (3000), or other dev ports all work without listing each one.
-_LOCAL_DEV_ORIGIN_REGEX = r"https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?"
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[] if is_allow_all_origins else settings.cors_origins_list,
-    allow_origin_regex=r"https?://.*" if is_allow_all_origins else _LOCAL_DEV_ORIGIN_REGEX,
-    # We use Authorization headers instead of cookies, so credentials are not required
-    # Some frontend requests include credentials (e.g., cookie-backed sessions),
-    # so we must allow them for the browser to accept CORS responses.
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS middleware - handle OPTIONS before any other processing
+@app.middleware("http")
+async def cors_middleware(request: Request, call_next):
+    # Log all requests
+    print(f"[SERVER] {request.method} {request.url.path}")
+    
+    # Handle preflight OPTIONS requests
+    if request.method == "OPTIONS":
+        print(f"[SERVER] CORS preflight for: {request.url.path}")
+        response = Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Credentials": "true",
+            }
+        )
+        return response
+    
+    # Process other requests
+    response = await call_next(request)
+    
+    # Add CORS headers to response
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    
+    return response
 
 #CREATING DIRECTORIES
 import os
@@ -155,14 +163,17 @@ app.include_router(payments.payment, prefix="/api/v1", tags=["payments"])
 # Fee Structure routes
 app.include_router(fee_structure.fee_structure, prefix="/api/v1", tags=["fee-structure"])
 
-# Schools routes (Engineering, Business, Biomedical with levels)
-app.include_router(schools.router, prefix="/api/v1", tags=["schools"])
+# Schools routes (Engineering, Business, Biomedical with levels) - DISABLED
+# app.include_router(schools.router, prefix="/api/v1", tags=["schools"])
 
 # Student Payments routes
 app.include_router(student_payments.router, prefix="/api/v1", tags=["student-payments"])
 
+# Certificate routes (transcripts and result slips)
+app.include_router(certificates.certificate_router, prefix="/api/v1", tags=["certificates"])
+
 # Import models to register them with metadata for table creation
-from app.models.school import School, SchoolFee
+# from app.models.school import School, SchoolFee  # Tables dropped by migrations
 from app.models.fee_structure import FeeStructure, FeeInstallment
 from app.models.student_payment import StudentPayment, StudentPaymentInstallment
 
@@ -201,3 +212,12 @@ def shutdown():
 @app.get("/", tags=["health"])
 def health_check():
     return {"status": "ok", "message": "School Management System is running!"}
+
+@app.get("/api/v1/health", tags=["health"])
+def api_health_check():
+    return {"status": "ok", "message": "API is running!"}
+
+@app.get("/api/v1/test-cors", tags=["health"])
+def test_cors():
+    """Test endpoint to verify CORS is working"""
+    return {"status": "ok", "message": "CORS test successful!"}

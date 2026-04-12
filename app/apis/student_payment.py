@@ -1,12 +1,14 @@
 """
 Student Payment API - CRUD operations for student payments and installments
+
+NOTE: School and SchoolFee models are disabled as their tables were dropped by migrations.
 """
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 
 from app.models.student_payment import StudentPayment, StudentPaymentInstallment
-from app.models.school import School, SchoolFee
+# from app.models.school import School, SchoolFee  # Disabled - tables dropped
 from app.schemas.student_payment import (
     StudentPaymentCreate,
     StudentPaymentUpdate,
@@ -88,15 +90,6 @@ def create_student_payment(
     if level not in VALID_LEVELS:
         raise ValidationError(f"Level must be one of: {', '.join(VALID_LEVELS)}")
     
-    # Check if school exists
-    school = db.query(School).filter(
-        School.id == payment_data.school_id,
-        School.institution_id == institution_id
-    ).first()
-    
-    if not school:
-        raise NotFoundError(f"School with ID {payment_data.school_id} not found")
-    
     # Check if payment record already exists for this student/school/level
     existing = get_student_payment(
         db, payment_data.student_id, institution_id,
@@ -106,22 +99,25 @@ def create_student_payment(
     if existing:
         raise ValidationError(
             f"Payment record already exists for student {payment_data.student_id} "
-            f"in school {school.name} at {level} level"
+            f"at {level} level"
         )
     
-    # Get school fees to calculate total and create installments
-    main_fee = db.query(SchoolFee).filter(
-        SchoolFee.school_id == payment_data.school_id,
-        SchoolFee.level == level
-    ).first()
-    
-    total_fee = float(main_fee.fee_amount) if main_fee else 0
-    
-    # Get installments from school fee settings
-    installments = db.query(SchoolFee).filter(
-        SchoolFee.school_id == payment_data.school_id,
-        SchoolFee.level == "INSTALLMENT"
+    # Get total fee from fee_installments table instead
+    from app.models.fee_structure import FeeInstallment
+    total_fee = 0
+    installments = db.query(FeeInstallment).filter(
+        FeeInstallment.school_id == payment_data.school_id,
+        FeeInstallment.level == level
     ).all()
+    
+    if not installments:
+        # Fallback to all installments
+        installments = db.query(FeeInstallment).filter(
+            FeeInstallment.school_id == payment_data.school_id
+        ).all()
+    
+    if installments:
+        total_fee = sum(float(inst.amount) for inst in installments)
     
     # Create student payment record
     student_payment = StudentPayment(
@@ -137,28 +133,24 @@ def create_student_payment(
     db.add(student_payment)
     db.flush()  # Get the ID
     
-    # Create installment records
+    # Create installment records from fee_installments
     if installments:
         for inst in installments:
-            due_date = None
-            if inst.fee_deadline:
-                due_date = inst.fee_deadline
-            
             installment = StudentPaymentInstallment(
                 student_payment_id=student_payment.id,
                 student_id=payment_data.student_id,
                 institution_id=institution_id,
                 school_id=payment_data.school_id,
-                installment_name=inst.installment_name or f"Installment",
-                required_amount=inst.fee_amount,
+                installment_name=inst.name or f"Installment",
+                required_amount=inst.amount,
                 paid_amount=0,
-                due_date=due_date or datetime.utcnow(),
+                due_date=inst.due_date or datetime.utcnow(),
                 is_paid=0
             )
             db.add(installment)
     elif total_fee > 0:
         # If no installment setup, create a single "Full Payment" installment
-        due_date = main_fee.fee_deadline if main_fee else datetime.utcnow()
+        due_date = datetime.utcnow()
         installment = StudentPaymentInstallment(
             student_payment_id=student_payment.id,
             student_id=payment_data.student_id,

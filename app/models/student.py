@@ -7,6 +7,7 @@ class Student(BaseModel_Base):
     id = Column(Integer, primary_key=True)
     institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    school_id = Column(Integer, nullable=False)  # References schools table but FK removed
     firstname = Column(String(70), nullable=False)
     middlename = Column(String(200), nullable=True)
     lastname = Column(String(70), nullable=False)
@@ -19,9 +20,11 @@ class Student(BaseModel_Base):
     class_id = Column(Integer, nullable=False)
     level = Column(String(20), nullable=False)
     type = Column(String(20), nullable=False, default="Undergraduate")  # regular, transfer, etc.
-    department_id = Column(Integer, nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"),nullable=False)
     academic_year_id = Column(Integer, nullable=False)
     guardian_id = Column(Integer, nullable=False)
+    place_of_birth = Column(String(200), nullable=True)  # Student's place of birth
+    degree_proposed = Column(String(100), nullable=True)  # Degree program being enrolled
     photo = Column(String(5000), nullable=True)  # Store base64 encoded photo or photo URL
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=True)

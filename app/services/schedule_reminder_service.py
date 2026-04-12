@@ -26,7 +26,7 @@ class ScheduleReminderService:
     def __init__(self, db: Session):
         self.db = db
     
-    def get_upcoming_classes(self, minutes_ahead: int = 30) -> List[Schedule]:
+    def get_upcoming_classes(self, minutes_ahead: int = None) -> List[Schedule]:
         """
         Get classes starting in the specified number of minutes
         
@@ -271,7 +271,7 @@ class ScheduleReminderService:
         
         return 30  # Default fallback
     
-    async def send_reminders_for_upcoming_classes(self, minutes_ahead: Optional[int] = None):
+    async def send_reminders_for_upcoming_classes(self, minutes_ahead: Optional[int] = 10):
         """
         Send reminder emails for classes starting in the specified minutes
         
@@ -300,8 +300,11 @@ class ScheduleReminderService:
         )
         
         schedules = query.all()
+
+        print(f"DEBUG: Found {len(schedules)} schedules starting at {target_time_str} on {current_day_name}")
         
         if not schedules:
+            # logger.info(f"FOund class schedules {schedules} but No classes found starting at {target_time_str} on {current_day_name}")
             logger.info(f"No classes found starting at {target_time_str}")
             return
         
@@ -368,20 +371,20 @@ class ScheduleReminderService:
                                         institution_name=institution_name
                                     )
                                 
-                                self.record_reminder_sent(
-                                    schedule_id=schedule.id,
-                                    institution_id=institution_id,
-                                    reminder_type='instructor',
-                                    recipient_email=instructor_email,
-                                    class_start_time=class_start_time,
-                                    status='sent' if success else 'failed',
-                                    error_message=None if success else 'Email sending failed'
-                                )
-                                
-                                if success:
-                                    logger.info(f"Reminder sent to instructor: {instructor_email}")
-                                else:
-                                    logger.error(f"Failed to send reminder to instructor: {instructor_email}")
+                                    self.record_reminder_sent(
+                                        schedule_id=schedule.id,
+                                        institution_id=institution_id,
+                                        reminder_type='instructor',
+                                        recipient_email=instructor_email,
+                                        class_start_time=class_start_time,
+                                        status='sent' if success else 'failed',
+                                        error_message=None if success else 'Email sending failed'
+                                    )
+                                    
+                                    if success:
+                                        logger.info(f"Reminder sent to instructor: {instructor_email}")
+                                    else:
+                                        logger.error(f"Failed to send reminder to instructor: {instructor_email}")
                             else:
                                 logger.debug(f"Reminder already sent to instructor: {instructor_email}")
                         else:

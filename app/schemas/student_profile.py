@@ -12,5 +12,6 @@ class Student_Profile_Response(BaseModel):
     phone:str
     class_id:str
     department_id:int
+    school_id:int
     academic_year_id:int
     enrollment_year:DateTime

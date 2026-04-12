@@ -56,8 +56,8 @@ def get_student_record_endpoint(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Student record not found for this user"
             )
-        # Verify the record belongs to this student
-        if str(record.student_id) != str(student.id):
+        # Verify the record belongs to this student (compare registration numbers)
+        if str(record.student_id) != str(student.student_id):
             from fastapi import HTTPException, status
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -86,8 +86,12 @@ def list_student_records(
     
     # Students can only view their own records
     if user_has_role(current_user, UserRole.STUDENT.value):
-        # Check payment access first - will raise PaymentAccessError if not paid
-        payment_status = check_payment_access(db=db, current_user=current_user)
+        # Try to check payment access, but skip if it fails
+        try:
+            payment_status = check_payment_access(db=db, current_user=current_user)
+        except Exception as e:
+            # Skip payment check if it fails - don't block access
+            print(f"[StudentRecords] Payment check skipped: {e}")
         
         # Find student by user email
         from app.models.student import Student
@@ -102,8 +106,8 @@ def list_student_records(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Student record not found for this user"
             )
-        # Force student_id filter to their own ID
-        student_id = str(student.id)
+        # Force student_id filter to their own registration number
+        student_id = student.student_id
     
     records, total = get_student_records(
         db=db,

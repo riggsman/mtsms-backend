@@ -18,9 +18,12 @@ class StudentResponse(BaseModel):
     class_id: int
     level: str
     department_id: int
+    school_id:int
     academic_year_id: int
     guardian_id: int
     branch_id: Optional[int] = None
+    place_of_birth: Optional[str] = None
+    degree_proposed: Optional[str] = None
     photo: Optional[str] = None  # Base64 encoded photo or photo URL
     created_at: datetime
     updated_at: Optional[datetime]
@@ -38,6 +41,7 @@ class StudentRequest(BaseModel):
     class_id: int
     level: str
     department_id: int
+    school_id:int
     academic_year_id: int
     branch_id: Optional[int] = None
     institution_id: Optional[int] = None  # Optional - can be provided in request body or will use current_user.institution_id
@@ -51,6 +55,8 @@ class StudentRequest(BaseModel):
     guardian_email: Optional[str] = None
     guardian_occupation: Optional[str] = None
     photo: Optional[str] = None  # Base64 encoded photo (data:image/...;base64,... format)
+    place_of_birth: Optional[str] = None  # Student's place of birth
+    degree_proposed: Optional[str] = None  # Degree program being enrolled
 
 class StudentUpdate(BaseModel):
     firstname: Optional[str] = None
@@ -67,6 +73,8 @@ class StudentUpdate(BaseModel):
     guardian_id: Optional[int] = None
     branch_id: Optional[int] = None
     photo: Optional[str] = None  # Base64 encoded photo (data:image/...;base64,... format)
+    place_of_birth: Optional[str] = None  # Student's place of birth
+    degree_proposed: Optional[str] = None  # Degree program being enrolled
 
 
 class GuardianRequest(BaseModel):

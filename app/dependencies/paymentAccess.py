@@ -30,16 +30,27 @@ class PaymentAccessError(HTTPException):
 async def get_student_school_level(
     db: Session,
     student_id: int,
-    institution_id: int
+    institution_id: int,
+    email: str = None
 ) -> tuple:
     """
     Get student's school_id and level from their student record.
     Returns (school_id, level) or raises HTTPException if not found.
     """
-    student = db.query(Student).filter(
-        Student.user_id == student_id,
-        Student.institution_id == institution_id
-    ).first()
+    # Try to find by email if provided
+    if email:
+        student = db.query(Student).filter(
+            Student.email == email,
+            Student.institution_id == institution_id,
+            Student.deleted_at.is_(None)
+        ).first()
+    else:
+        # Fallback: try to find by id (student.id)
+        student = db.query(Student).filter(
+            Student.id == student_id,
+            Student.institution_id == institution_id,
+            Student.deleted_at.is_(None)
+        ).first()
     
     if not student:
         raise HTTPException(
@@ -51,10 +62,8 @@ async def get_student_school_level(
     level = getattr(student, 'level', None)
     
     if not school_id or not level:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Student record is missing school or level information. Please contact administration."
-        )
+        # Return None for school_id/level if not configured
+        return school_id, level
     
     return school_id, level
 
@@ -68,6 +77,7 @@ async def check_payment_access(
     Returns a dict with payment status info.
     Raises PaymentAccessError if student has not paid.
     
+    Can also be called directly with db and user objects (for use in routes).
     Usage:
         @router.get("/results")
         async def get_results(
@@ -75,7 +85,44 @@ async def check_payment_access(
         ):
             ...
     """
-    if currentUser.role != "student":
+    # Handle both direct calls (with User object) and dependency calls (with AuthUser)
+    # For direct calls, currentUser might be a User object
+    user_role = getattr(currentUser, 'role', None) or getattr(currentUser, 'user', None)
+    if hasattr(user_role, 'role'):
+        user_role = user_role.role
+    
+    if user_role is None:
+        # Try to get role from user_roles_list
+        from app.helpers.user_roles import user_roles_list
+        user_roles = user_roles_list(currentUser) if hasattr(currentUser, 'role') else []
+        if 'student' not in user_roles:
+            return {
+                "has_access": True,
+                "is_admin": True,
+                "student_id": None,
+                "school_id": None,
+                "level": None
+            }
+    elif isinstance(user_role, str):
+        user_role_str = user_role.lower()
+        if 'student' not in user_role_str:
+            return {
+                "has_access": True,
+                "is_admin": True,
+                "student_id": None,
+                "school_id": None,
+                "level": None
+            }
+    elif isinstance(user_role, list):
+        if 'student' not in user_role:
+            return {
+                "has_access": True,
+                "is_admin": True,
+                "student_id": None,
+                "school_id": None,
+                "level": None
+            }
+    else:
         return {
             "has_access": True,
             "is_admin": True,
@@ -84,10 +131,28 @@ async def check_payment_access(
             "level": None
         }
     
-    institution_id = int(currentUser.institution_id)
-    student_id = currentUser.user_id
+    institution_id = int(getattr(currentUser, 'institution_id', None) or getattr(currentUser.user, 'institution_id', None) if hasattr(currentUser, 'user') else None)
+    student_id = getattr(currentUser, 'id', None) or getattr(currentUser.user, 'id', None) if hasattr(currentUser, 'user') else None
+    email = getattr(currentUser, 'email', None) or getattr(currentUser.user, 'email', None) if hasattr(currentUser, 'user') else None
     
-    school_id, level = await get_student_school_level(db, student_id, institution_id)
+    # Try to get school_id and level
+    school_id, level = None, None
+    try:
+        school_id, level = await get_student_school_level(db, student_id, institution_id, email)
+    except HTTPException:
+        # If student record not found, skip payment check
+        pass
+    
+    # If no school_id/level, skip payment check (not configured)
+    if not school_id and not level:
+        return {
+            "has_access": True,
+            "is_admin": False,
+            "student_id": student_id,
+            "school_id": None,
+            "level": None,
+            "note": "Payment check skipped - school/level not configured"
+        }
     
     is_paid = is_student_fully_paid(db, student_id, institution_id, school_id, level)
     has_overdue = has_overdue_payments(db, student_id, institution_id, school_id, level)
@@ -139,9 +204,10 @@ async def optional_payment_check(
     
     institution_id = int(currentUser.institution_id)
     student_id = currentUser.user_id
+    email = getattr(currentUser, 'email', None)
     
     try:
-        school_id, level = await get_student_school_level(db, student_id, institution_id)
+        school_id, level = await get_student_school_level(db, student_id, institution_id, email)
     except HTTPException:
         return {
             "has_access": True,
@@ -150,6 +216,17 @@ async def optional_payment_check(
             "has_overdue": None,
             "student_id": student_id,
             "error": "Student record not found"
+        }
+    
+    # If no school_id/level, skip payment check
+    if not school_id and not level:
+        return {
+            "has_access": True,
+            "is_admin": False,
+            "is_fully_paid": None,
+            "has_overdue": None,
+            "student_id": student_id,
+            "note": "Payment check skipped - school/level not configured"
         }
     
     is_paid = is_student_fully_paid(db, student_id, institution_id, school_id, level)
@@ -195,8 +272,26 @@ def require_admin_or_payment():
         
         institution_id = int(currentUser.institution_id)
         student_id = currentUser.user_id
+        email = getattr(currentUser, 'email', None)
         
-        school_id, level = await get_student_school_level(db, student_id, institution_id)
+        # Try to get school_id and level
+        school_id, level = None, None
+        try:
+            school_id, level = await get_student_school_level(db, student_id, institution_id, email)
+        except HTTPException:
+            # If student record not found, skip payment check
+            pass
+        
+        # If no school_id/level, skip payment check
+        if not school_id and not level:
+            return {
+                "has_access": True,
+                "is_admin": False,
+                "student_id": student_id,
+                "school_id": None,
+                "level": None,
+                "note": "Payment check skipped - school/level not configured"
+            }
         
         is_paid = is_student_fully_paid(db, student_id, institution_id, school_id, level)
         

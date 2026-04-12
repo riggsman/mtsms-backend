@@ -107,13 +107,13 @@ def get_current_user(
 
 
 def get_current_user_tenant(
-    authorization: str = Header(..., alias="Authorization"),
-    x_tenant_name: str = Header(..., alias="X-Tenant-Name"),
+    authorization: str = Header(None, alias="Authorization"),
+    x_tenant_name: str = Header(None, alias="X-Tenant-Name"),
     db: Session = Depends(get_db)
 ) -> User:
     """
     Dependency to get the current authenticated user from tenant-specific database
-    Expects: Authorization: Bearer <token> and X-Tenant-Name header
+    Expects: Authorization: Bearer <token> and optionally X-Tenant-Name header
     """
     if not authorization:
         raise HTTPException(
