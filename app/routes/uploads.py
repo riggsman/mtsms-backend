@@ -1,8 +1,8 @@
 """
 Routes for handling file uploads (tenant logo and profile pictures)
 """
-from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException, status, Header
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from app.apis.uploads import (
     upload_tenant_logo,
@@ -232,7 +232,8 @@ def delete_user_profile_picture_endpoint(
 
 @upload_router.get("/uploads/{file_path:path}")
 async def serve_uploaded_file(
-    file_path: str
+    file_path: str,
+    origin: str = Header(None)
 ):
     """
     Serve uploaded files dynamically (logos, profile pictures, etc.)
@@ -319,8 +320,17 @@ async def serve_uploaded_file(
     
     content_type = content_types.get(file_ext, 'application/octet-stream')
     
-    return FileResponse(
-        path=full_path,
+    # Read file and return with CORS headers
+    with open(full_path, 'rb') as f:
+        file_content = f.read()
+    
+    return Response(
+        content=file_content,
         media_type=content_type,
-        filename=os.path.basename(full_path)
+        headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Content-Disposition': f'inline; filename="{os.path.basename(full_path)}"'
+        }
     )

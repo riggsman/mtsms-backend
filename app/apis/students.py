@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.models.student import Student
@@ -9,7 +10,137 @@ from app.helpers.activity_logger import log_create_activity, log_update_activity
 from app.apis.tenant_settings import generate_student_id, is_matricule_format_configured
 from app.apis.classes import check_classes_configured
 import datetime
+import os
+import uuid
+import re
+import base64
+from pathlib import Path
 from app.helpers.logger import *
+from fastapi import HTTPException, status
+
+
+async def save_student_photo(base64_photo: str, institution_id: int, student_id: str) -> Optional[str]:
+    """
+    Save base64 encoded photo to uploads/student_photos directory and return relative path.
+    
+    Args:
+        base64_photo: Base64 encoded photo string (data:image/...;base64,...)
+        institution_id: Institution ID for tenant scoping
+        student_id: Student ID for naming the file
+        
+    Returns:
+        Relative path to saved photo or None if no photo provided
+    """
+    if not base64_photo or not base64_photo.strip():
+        return None
+    
+    if not base64_photo.startswith('data:image/'):
+        return base64_photo
+    
+    try:
+        tenant_domain = "default"
+        try:
+            from app.models.tenant import Tenant
+            from app.database.base import get_db_session
+            global_db = next(get_db_session())
+            try:
+                tenant = global_db.query(Tenant).filter(Tenant.id == institution_id).first()
+                if tenant and tenant.domain:
+                    tenant_domain = tenant.domain
+            finally:
+                global_db.close()
+        except Exception:
+            pass
+        
+        from app.helpers.file_upload import sanitize_domain
+        sanitized_domain = sanitize_domain(tenant_domain)
+        
+        header, encoded = base64_photo.split(',', 1)
+        image_data = base64.b64decode(encoded)
+        
+        file_ext = '.jpg'
+        if 'png' in header:
+            file_ext = '.png'
+        elif 'gif' in header:
+            file_ext = '.gif'
+        elif 'webp' in header:
+            file_ext = '.webp'
+        
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"{sanitized_domain}_student_{student_id}_{timestamp}_{unique_id}{file_ext}"
+        
+        upload_dir = os.path.join(os.getcwd(), 'uploads', 'student_photos')
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        file_path = os.path.join(upload_dir, filename)
+        with open(file_path, 'wb') as f:
+            f.write(image_data)
+        
+        relative_path = os.path.join('student_photos', filename).replace('\\', '/')
+        return relative_path
+        
+    except Exception as e:
+        print(f"Error saving student photo: {e}")
+        return None
+
+
+def save_student_photo_sync(base64_photo: str, institution_id: int, student_id: str) -> Optional[str]:
+    """
+    Synchronous version of save_student_photo for use in sync contexts.
+    """
+    if not base64_photo or not base64_photo.strip():
+        return None
+    
+    if not base64_photo.startswith('data:image/'):
+        return base64_photo
+    
+    try:
+        tenant_domain = "default"
+        try:
+            from app.models.tenant import Tenant
+            from app.database.base import get_db_session
+            global_db = next(get_db_session())
+            try:
+                tenant = global_db.query(Tenant).filter(Tenant.id == institution_id).first()
+                if tenant and tenant.domain:
+                    tenant_domain = tenant.domain
+            finally:
+                global_db.close()
+        except Exception:
+            pass
+        
+        from app.helpers.file_upload import sanitize_domain
+        sanitized_domain = sanitize_domain(tenant_domain)
+        
+        header, encoded = base64_photo.split(',', 1)
+        image_data = base64.b64decode(encoded)
+        
+        file_ext = '.jpg'
+        if 'png' in header:
+            file_ext = '.png'
+        elif 'gif' in header:
+            file_ext = '.gif'
+        elif 'webp' in header:
+            file_ext = '.webp'
+        
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"{sanitized_domain}_student_{student_id}_{timestamp}_{unique_id}{file_ext}"
+        
+        upload_dir = os.path.join(os.getcwd(), 'uploads', 'student_photos')
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        file_path = os.path.join(upload_dir, filename)
+        with open(file_path, 'wb') as f:
+            f.write(image_data)
+        
+        relative_path = os.path.join('student_photos', filename).replace('\\', '/')
+        return relative_path
+        
+    except Exception as e:
+        print(f"Error saving student photo: {e}")
+        return None
 
 def create_student(db: Session, student: StudentRequest, institution_id: Optional[int] = None, current_user: Optional[User] = None) -> Student:
     """Create a new student"""
@@ -22,10 +153,17 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
     
     # Check if classes are configured for this institution
     if not check_classes_configured(db, final_institution_id):
-        raise ValidationError(
-            "Classes have not been configured for this institution. "
-            "Please configure classes before registering students."
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Classes have not been configured for institution wiwth id {final_institution_id}.")
+        raise HTTPException(
+            status_code = status.HTTP_400_BAD_REQUEST,
+            detail = "Classes have not been configured for this institution."
         )
+        # raise ValidationError(
+        #     "Classes have not been configured for this institution. "
+        #     "Please configure classes before registering students."
+        # )
     
     # Check if email already exists within the same institution
     existing = db.query(Student).filter(
@@ -46,12 +184,43 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
                 "Matricule format is not configured. Please configure it in Tenant Settings before creating students."
             )
         
+        # Fetch school, branch, and department codes for matricule generation
+        school_initial = ''
+        branch_initial = ''
+        department_code = ''
+        
+        # Get school code
+        if student.school_id:
+            from app.models.school import School
+            school = db.query(School).filter(School.id == student.school_id).first()
+            if school and school.code:
+                school_initial = school.code.strip().upper()[:3]
+        
+        # Get branch initial (only if branch is provided)
+        if student.branch_id:
+            from app.models.branch import Branch
+            branch = db.query(Branch).filter(Branch.id == student.branch_id).first()
+            if branch and branch.name:
+                branch_initial = branch.name.strip()[0].upper()
+        
+        # Get department code
+        if student.department_id:
+            from app.models.department import Department
+            dept = db.query(Department).filter(Department.id == student.department_id).first()
+            if dept and dept.code:
+                department_code = dept.code.strip().upper()
+        
         # Generate student_id using configured format
         student_data_dict = {
             'class_id': student.class_id,
             'department_id': student.department_id,
             'academic_year_id': student.academic_year_id,
-            'academic_year': datetime.datetime.now().year  # Default to current year
+            'academic_year': datetime.datetime.now().year,  # Default to current year
+            'school_id': student.school_id,
+            'branch_id': student.branch_id,
+            'school_initial': school_initial,
+            'branch_initial': branch_initial,
+            'department_code': department_code
         }
         student_id_to_use = generate_student_id(db, final_institution_id, student_data_dict)
     
@@ -125,7 +294,15 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
     db.commit()
     db.refresh(new_student)
 
-    new_student.photo = student.photo
+    if student.photo:
+        try:
+            photo_path = save_student_photo_sync(student.photo, final_institution_id, student.student_id)
+            if photo_path:
+                new_student.photo = photo_path
+                db.commit()
+                db.refresh(new_student)
+        except Exception as e:
+            print(f"Error saving photo: {e}")
     
     # Log activity if current_user is provided
     if current_user:
@@ -182,22 +359,142 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
     return new_student
 
 
+def resolve_student_for_logged_in_user(db: Session, current_user: User) -> Optional[Student]:
+    """
+    Resolve the Student record for the authenticated user (same institution).
+
+    Tries, in order:
+    1) Case-insensitive match on User.email vs Student.email
+    2) Student.student_id (matricule) == User.username (common login pattern)
+    3) Case-insensitive match on User.username vs Student.email (edge cases)
+    """
+    if not current_user or not current_user.institution_id:
+        return None
+
+    institution_id = current_user.institution_id
+    base = db.query(Student).filter(
+        Student.institution_id == institution_id,
+        Student.deleted_at.is_(None),
+    )
+
+    email_norm = (current_user.email or "").strip()
+    if email_norm:
+        row = base.filter(func.lower(Student.email) == email_norm.lower()).first()
+        if row:
+            return row
+
+    username_norm = (current_user.username or "").strip()
+    if username_norm:
+        row = base.filter(Student.student_id == username_norm).first()
+        if row:
+            return row
+        row = base.filter(func.lower(Student.email) == username_norm.lower()).first()
+        if row:
+            return row
+
+    return None
+
+
 def get_student(db: Session, student_id: int, institution_id: Optional[int] = None) -> Student:
-    """Get a student by ID (tenant-scoped if institution_id is provided)"""
-    userQuery = db.query(User).filter(
-        User.id == student_id,
-        User.deleted_at.is_(None)
-    ).first()
+    """Get a student by primary key (tenant-scoped when institution_id is provided)."""
     query = db.query(Student).filter(
-        Student.institution_id == userQuery.institution_id,
-        Student.deleted_at.is_(None)
+        Student.id == student_id,
+        Student.deleted_at.is_(None),
     )
     if institution_id is not None:
         query = query.filter(Student.institution_id == institution_id)
     student = query.first()
     if not student:
         raise NotFoundError(f"Student with ID {student_id} not found")
-    print(f"DEBUG STUDENT DATA RECEIVED {student.school_id}")
+
+    # Enrich detail payload with human-readable linked data so the frontend
+    # can render student details directly from one server response.
+    try:
+        from app.models.guardian import Guardian
+        guardian = (
+            db.query(Guardian)
+            .filter(
+                Guardian.id == student.guardian_id,
+                Guardian.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if guardian:
+            setattr(student, "guardian_name", guardian.guardian_name)
+            setattr(student, "guardian_phone", guardian.phone)
+            setattr(student, "guardian_address", guardian.address)
+            setattr(student, "guardian_relationship", guardian.relationship)
+            setattr(student, "guardian_gender", guardian.gender)
+            setattr(student, "guardian_email", guardian.email)
+            setattr(student, "guardian_occupation", guardian.occupation)
+    except Exception:
+        pass
+
+    try:
+        from app.models.branch import Branch
+        if student.branch_id:
+            branch = (
+                db.query(Branch)
+                .filter(Branch.id == student.branch_id)
+                .first()
+            )
+            if branch:
+                setattr(student, "branch_name", branch.name)
+    except Exception:
+        pass
+
+    try:
+        from app.models.classes import Class
+        class_row = (
+            db.query(Class)
+            .filter(Class.id == student.class_id, Class.deleted_at.is_(None))
+            .first()
+        )
+        if class_row:
+            setattr(student, "class_name", class_row.name or class_row.class_name)
+    except Exception:
+        pass
+
+    try:
+        from app.models.department import Department
+        dept = (
+            db.query(Department)
+            .filter(Department.id == student.department_id, Department.deleted_at.is_(None))
+            .first()
+        )
+        if dept:
+            setattr(student, "department_name", dept.name)
+    except Exception:
+        pass
+
+    try:
+        from app.models.specialty import Specialization
+        if student.specialization_id:
+            specialization = (
+                db.query(Specialization)
+                .filter(
+                    Specialization.id == student.specialization_id,
+                    Specialization.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if specialization:
+                setattr(student, "specialization_name", specialization.name)
+    except Exception:
+        pass
+
+    try:
+        from app.models.school import School
+        school = (
+            db.query(School)
+            .filter(School.id == student.school_id, School.deleted_at.is_(None))
+            .first()
+        )
+        if school:
+            setattr(student, "school_name", school.name)
+    except Exception:
+        pass
+
     return student
 
 
@@ -234,9 +531,15 @@ def get_students(
 
 def update_student(db: Session, student_id: int, student_update: StudentUpdate, current_user: Optional[User] = None) -> Student:
     """Update a student"""
-    student = get_student(db, student_id)
-    
-    update_data = student_update.dict(exclude_unset=True)
+    from app.helpers.user_roles import user_requires_tenant_scope_for_data
+
+    institution_id = None
+    if current_user and user_requires_tenant_scope_for_data(current_user):
+        institution_id = current_user.institution_id
+
+    student = get_student(db, student_id, institution_id=institution_id)
+
+    update_data = student_update.model_dump(exclude_unset=True) if hasattr(student_update, "model_dump") else student_update.dict(exclude_unset=True)
     
     # Check email uniqueness if being updated
     if "email" in update_data:
@@ -256,8 +559,18 @@ def update_student(db: Session, student_id: int, student_update: StudentUpdate, 
         if existing:
             raise ConflictError(f"Student with student_id {update_data['student_id']} already exists")
     
+    photo_value = update_data.pop('photo', None)
+    
     for field, value in update_data.items():
         setattr(student, field, value)
+    
+    if photo_value:
+        try:
+            photo_path = save_student_photo_sync(photo_value, student.institution_id, student.student_id)
+            if photo_path:
+                student.photo = photo_path
+        except Exception as e:
+            print(f"Error saving photo: {e}")
     
     db.commit()
     db.refresh(student)
@@ -286,7 +599,13 @@ def update_student(db: Session, student_id: int, student_update: StudentUpdate, 
 
 def delete_student(db: Session, student_id: int, current_user: Optional[User] = None) -> bool:
     """Soft delete a student"""
-    student = get_student(db, student_id)
+    from app.helpers.user_roles import user_requires_tenant_scope_for_data
+
+    institution_id = None
+    if current_user and user_requires_tenant_scope_for_data(current_user):
+        institution_id = current_user.institution_id
+
+    student = get_student(db, student_id, institution_id=institution_id)
     student_name = f"{student.firstname} {student.lastname} ({student.student_id})"
     institution_id = student.institution_id
     from datetime import datetime

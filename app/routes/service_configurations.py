@@ -192,6 +192,10 @@ def update_service_configurations(
     This endpoint also synchronizes the corresponding flags on the
     SubscriptionService model (`is_freemium_enabled`, `is_premium_enabled`)
     so the service table reflects the current availability.
+
+    Accepts both numeric service IDs and button IDs from serviceButtons.js.
+    When a button ID is passed (e.g., "quick_pay_fees"), it will
+    look up the corresponding SubscriptionService by name.
     """
     if not user_is_system_admin(current_user):
         raise HTTPException(
@@ -201,22 +205,40 @@ def update_service_configurations(
     updated_configs = []
 
     for config_item in payload.configurations:
-        # Get the subscription service so we can:
-        # 1) know its name for ServiceConfiguration.service_name
-        # 2) update its freemium/premium flags to mirror config
-        subscription_service = (
-            db.query(SubscriptionService)
-            .filter(
-                SubscriptionService.id == config_item.service_id,
-                SubscriptionService.deleted_at.is_(None),
+        # --- Resolve the subscription service ---
+        subscription_service = None
+
+        # Try to interpret service_id as integer (numeric ID)
+        try:
+            service_id_int = int(config_item.service_id)
+            subscription_service = (
+                db.query(SubscriptionService)
+                .filter(
+                    SubscriptionService.id == service_id_int,
+                    SubscriptionService.deleted_at.is_(None),
+                )
+                .first()
             )
-            .first()
-        )
+        except (ValueError, TypeError):
+            # Not an integer → treat as button ID (string)
+            pass
+
+        # If not found by numeric ID, try to find by button ID (service name)
+        if not subscription_service:
+            # The button ID might be stored as service_name in SubscriptionService
+            subscription_service = (
+                db.query(SubscriptionService)
+                .filter(
+                    SubscriptionService.name == config_item.service_id,
+                    SubscriptionService.deleted_at.is_(None),
+                )
+                .first()
+            )
 
         if not subscription_service:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Subscription service with ID {config_item.service_id} not found",
+                detail=f"Subscription service with ID '{config_item.service_id}' not found",
             )
 
         # Use subscription service name as service_name
@@ -306,7 +328,7 @@ def update_service_configurations(
 def list_service_configurations(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=1000),
-    service_name: Optional[str] = Query(None, description="Filter by service name"),
+    service_name: Optional[str] = Query(None, description="Filter by service name or button ID"),
     tenant_id: Optional[int] = Query(None, description="Filter by tenant ID"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     db: Session = Depends(get_db_session),
@@ -315,6 +337,8 @@ def list_service_configurations(
     """
     List service configurations with pagination.
     System-level only (system_admin / system_super_admin).
+    
+    Supports filtering by service_name (which can be a button ID from serviceButtons.js).
     """
     if not user_is_system_admin(current_user):
         raise HTTPException(
@@ -324,14 +348,18 @@ def list_service_configurations(
     query = db.query(ServiceConfiguration).filter(
         ServiceConfiguration.deleted_at.is_(None)
     )
-
+    
     if service_name:
-        query = query.filter(ServiceConfiguration.service_name == service_name)
+        # Allow filtering by service name OR button ID (which is stored in configuration_key)
+        query = query.filter(
+            (ServiceConfiguration.service_name == service_name) |
+            (ServiceConfiguration.configuration_key == service_name)
+        )
     if tenant_id is not None:
         query = query.filter(ServiceConfiguration.tenant_id == tenant_id)
     if is_active is not None:
         query = query.filter(ServiceConfiguration.is_active == is_active)
-
+    
     total = query.count()
     configs = (
         query.order_by(ServiceConfiguration.service_name, ServiceConfiguration.configuration_key)
@@ -339,7 +367,7 @@ def list_service_configurations(
         .limit(page_size)
         .all()
     )
-
+    
     result_configs = [
         ServiceConfigurationResponse(
             id=config.id,
@@ -354,7 +382,7 @@ def list_service_configurations(
         )
         for config in configs
     ]
-
+    
     return PaginatedResponse.create(
         items=result_configs,
         total=total,
@@ -368,7 +396,7 @@ def list_service_configurations(
     tags=["Service Configurations"],
 )
 def check_service_access_for_tenant(
-    service_name: str = Query(..., description="Name of the service to check access for"),
+    service_name: str = Query(..., description="Name of the service or button ID to check access for"),
     db: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -377,11 +405,15 @@ def check_service_access_for_tenant(
     service is currently enabled (freemium or premium) in the admin
     subscription management screen.
 
+    Accepts either:
+    - A service name (e.g., "Download Results")
+    - A button ID from serviceButtons.js (e.g., "quick_pay_fees")
+    
     For now this checks global configuration only and does not
     differentiate per-tenant subscription plans – if the service is
     enabled for *any* subscription type, students can use it.
     """
-    # Find the subscription service by name
+    # First try to find by service name
     subscription_service = (
         db.query(SubscriptionService)
         .filter(
@@ -390,7 +422,28 @@ def check_service_access_for_tenant(
         )
         .first()
     )
-
+    
+    # If not found by name, try to find by button ID in configuration_key
+    if not subscription_service:
+        config_by_id = (
+            db.query(ServiceConfiguration)
+            .filter(
+                ServiceConfiguration.configuration_key == service_name,
+                ServiceConfiguration.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if config_by_id:
+            # Get the subscription service by name from the config
+            subscription_service = (
+                db.query(SubscriptionService)
+                .filter(
+                    SubscriptionService.name == config_by_id.service_name,
+                    SubscriptionService.deleted_at.is_(None),
+                )
+                .first()
+            )
+    
     if not subscription_service:
         # Service not defined → no access
         return {"service_name": service_name, "has_access": False}
@@ -407,7 +460,7 @@ def check_service_access_for_tenant(
         )
         .all()
     )
-
+    
     has_access = False
     # Base amount comes from the SubscriptionService "price" field
     amount = None
@@ -416,23 +469,23 @@ def check_service_access_for_tenant(
             amount = float(subscription_service.price)
         except (TypeError, ValueError):
             amount = None
-
+    
     # Track whether freemium is enabled and any configured max free downloads
     is_freemium_enabled = False
     max_free_download = None
-
+    
     for cfg in configs:
         # configuration_value is stored as JSON string like {"is_enabled": true}
         try:
             value = json.loads(cfg.configuration_value) if cfg.configuration_value else {}
         except Exception:
             value = {}
-
+        
         is_enabled = bool(value.get("is_enabled", cfg.is_active))
-
+        
         if is_enabled:
             has_access = True
-
+            
             # If this is the freemium configuration, read max_free_download if provided
             if cfg.configuration_key == "subscription_type_freemium":
                 is_freemium_enabled = True
@@ -442,23 +495,20 @@ def check_service_access_for_tenant(
                         max_free_download = int(raw_max_free)
                 except (TypeError, ValueError):
                     max_free_download = None
-
-            # We can stop once we find the first enabled configuration
-            break
-
+    
     response = {
         "service_name": service_name,
         "has_access": has_access,
     }
-
+    
     # Only include amount if we successfully parsed a number
     if amount is not None:
         response["amount"] = amount
-
+    
     # Include freemium/max-free metadata if available
     if is_freemium_enabled:
         response["is_freemium_enabled"] = True
     if max_free_download is not None:
         response["max_free_download"] = max_free_download
-
+    
     return response

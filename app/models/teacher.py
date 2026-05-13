@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Numeric
 from app.database.sessionManager import BaseModel_Base
 import datetime
 
@@ -20,6 +20,7 @@ class Teacher(BaseModel_Base):
     position = Column(String(120), nullable=True)
     qualification = Column(String(200), nullable=True)
     specialization = Column(String(200), nullable=True)
+    hourly_rate = Column(Numeric(12, 2), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=True)
     deleted_at = Column(DateTime, nullable=True)  # Soft delete

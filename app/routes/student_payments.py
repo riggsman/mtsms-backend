@@ -41,6 +41,75 @@ def get_student_payments(
     return [StudentPaymentResponse.from_model(p) for p in payments]
 
 
+@router.get("/student-payments/fee-preview")
+def get_payment_fee_preview(
+    school_id: int,
+    level: str,
+    db: Session = Depends(get_db),
+    currentUser: AuthUser = Depends(auth_guard)
+):
+    """
+    Get a preview of the total fee for a school and level combination.
+    Used to show the fee before creating a payment record.
+    """
+    import logging
+    from app.models.fee_structure import FeeInstallment
+    
+    logger = logging.getLogger(__name__)
+    institution_id = int(currentUser.institution_id)
+    level_upper = level.upper()
+    
+    logger.info(f"[fee-preview] institution_id={institution_id}, school_id={school_id}, level={level_upper}")
+    
+    # Query fee installments filtered by tenant (institution), school, and level
+    installments = db.query(FeeInstallment).filter(
+        FeeInstallment.tenant_id == institution_id,
+        FeeInstallment.school_id == school_id,
+        FeeInstallment.level == level_upper,
+        FeeInstallment.is_active == True
+    ).all()
+    
+    logger.info(f"[fee-preview] Found {len(installments)} installments for level={level_upper}")
+    
+    # Debug: log all available levels for this school
+    all_installments = db.query(FeeInstallment).filter(
+        FeeInstallment.tenant_id == institution_id,
+        FeeInstallment.school_id == school_id,
+        FeeInstallment.is_active == True
+    ).all()
+    
+    available_levels = list(set([inst.level for inst in all_installments]))
+    logger.info(f"[fee-preview] Available levels in DB: {available_levels}")
+    
+    total_fee = sum(float(inst.amount) for inst in installments) if installments else 0
+    
+    # If no specific level found, try without level filter
+    if not installments and all_installments:
+        logger.warning(f"[fee-preview] No installments for level={level_upper}, using all available")
+        installments = all_installments
+        total_fee = sum(float(inst.amount) for inst in installments)
+    
+    logger.info(f"[fee-preview] Final total_fee={total_fee}")
+    
+    return {
+        "school_id": school_id,
+        "level": level_upper,
+        "total_fee": total_fee,
+        "installments_count": len(installments),
+        "available_levels": available_levels,
+        "installments": [
+            {
+                "id": inst.id,
+                "installment_name": inst.name,
+                "required_amount": float(inst.amount),
+                "level": inst.level,
+                "due_date": inst.due_date.isoformat() if inst.due_date else None
+            }
+            for inst in installments
+        ]
+    }
+
+
 @router.get("/student-payments/{payment_id}", response_model=StudentPaymentResponse)
 def get_student_payment(
     payment_id: int,

@@ -28,6 +28,14 @@ class SystemSettings(DefaultBase):
     access_token_expire_minutes = Column(Integer, default=60, nullable=False)
     refresh_token_expire_days = Column(Integer, default=1, nullable=False)
 
+    # Cache version for frontend cache synchronization
+    # This value increments whenever a force-apply is triggered,
+    # allowing all frontend clients to detect the change and refresh their caches
+    cache_version = Column(String(64), default="1", nullable=False)
+
+    # System logo URL
+    logo_url = Column(String(500), nullable=True)
+
     # Firebase Cloud Messaging configuration for push notifications
     firebase_messaging_enabled = Column(Boolean, default=False, nullable=False)
     firebase_api_key = Column(String(500), nullable=True)
@@ -36,6 +44,9 @@ class SystemSettings(DefaultBase):
     firebase_messaging_sender_id = Column(String(255), nullable=True)
     firebase_app_id = Column(String(255), nullable=True)
     firebase_vapid_key = Column(String(500), nullable=True)
+    firebase_storage_bucket = Column(String(255), nullable=True)
+    firebase_measurement_id = Column(String(255), nullable=True)
+    firebase_service_account_uploaded = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(
         DateTime, default=datetime.datetime.utcnow, nullable=False

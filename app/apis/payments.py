@@ -11,29 +11,27 @@ import string
 from app.models.payment import Payment
 from app.models.student import Student
 from app.models.user import User
+from app.models.department import Department
+from app.models.specialty import Specialization
+from app.models.tenant import Tenant
 from app.schemas.payment import (
     PaymentInitiateRequest,
     PaymentInitiateResponse,
     PaymentVerifyRequest,
     PaymentVerifyResponse,
-    PaymentResponse
+    PaymentResponse,
+    PaymentPublicVerificationResponse,
 )
-from app.exceptions import NotFoundError, ValidationError
+from app.exceptions import NotFoundError, ValidationError, ForbiddenError
 from app.helpers.pagination import paginate_query
 from app.helpers.activity_logger import log_create_activity, log_update_activity
-from app.services.email_service import EmailService
 from app.services.email_tracker import EmailTracker
 from app.helpers.async_helper import run_async_safe
+from app.database.sessionManager import create_standalone_db_session
 from app.conf.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
-from app.conf.config import settings
-import logging
-
-logger = logging.getLogger(__name__)
-from app.services.email_tracker import EmailTracker
-from app.helpers.async_helper import run_async_safe
 
 
 def generate_transaction_id() -> str:
@@ -53,11 +51,128 @@ def generate_otp() -> str:
     return ''.join(secrets.choice(string.digits) for _ in range(6))
 
 
+def _dept_and_spec_names_for_student(
+    db: Session, student: Optional[Student]
+) -> Tuple[Optional[str], Optional[str]]:
+    if not student:
+        return None, None
+    dept_name = None
+    spec_name = None
+    if student.department_id:
+        d = (
+            db.query(Department)
+            .filter(
+                Department.id == student.department_id,
+                Department.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if d:
+            dept_name = d.name
+    if student.specialization_id:
+        sp = (
+            db.query(Specialization)
+            .filter(
+                Specialization.id == student.specialization_id,
+                Specialization.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if sp:
+            spec_name = sp.name
+    return dept_name, spec_name
+
+
+def payment_to_response(db: Session, payment: Payment) -> PaymentResponse:
+    """PaymentResponse with department/specialization for receipts and lists."""
+    student = (
+        db.query(Student)
+        .filter(Student.id == payment.student_id, Student.deleted_at.is_(None))
+        .first()
+    )
+    dept, spec = _dept_and_spec_names_for_student(db, student)
+    return PaymentResponse.from_payment(
+        payment, department_name=dept, specialization_name=spec
+    )
+
+
+def payments_to_responses(db: Session, payments: List[Payment]) -> List[PaymentResponse]:
+    """Batch version: avoids N+1 department/specialization lookups."""
+    if not payments:
+        return []
+    student_ids = {p.student_id for p in payments}
+    students = (
+        db.query(Student)
+        .filter(Student.id.in_(student_ids), Student.deleted_at.is_(None))
+        .all()
+    )
+    by_sid = {s.id: s for s in students}
+    dept_ids = {s.department_id for s in students if s.department_id}
+    spec_ids = {s.specialization_id for s in students if s.specialization_id}
+    dept_by_id: dict = {}
+    if dept_ids:
+        for d in (
+            db.query(Department)
+            .filter(Department.id.in_(dept_ids), Department.deleted_at.is_(None))
+            .all()
+        ):
+            dept_by_id[d.id] = d.name
+    spec_by_id: dict = {}
+    if spec_ids:
+        for sp in (
+            db.query(Specialization)
+            .filter(Specialization.id.in_(spec_ids), Specialization.deleted_at.is_(None))
+            .all()
+        ):
+            spec_by_id[sp.id] = sp.name
+    out: List[PaymentResponse] = []
+    for p in payments:
+        st = by_sid.get(p.student_id)
+        dn = dept_by_id.get(st.department_id) if st and st.department_id else None
+        sn = spec_by_id.get(st.specialization_id) if st and st.specialization_id else None
+        out.append(
+            PaymentResponse.from_payment(
+                p, department_name=dn, specialization_name=sn
+            )
+        )
+    return out
+
+
+def get_public_payment_verification(
+    db: Session, transaction_id: str, institution_id: int
+) -> PaymentPublicVerificationResponse:
+    """
+    Lookup payment by transaction_id and institution_id (public receipt verification).
+    Uses the default app database session (same as tenant catalog / shared tenant DB).
+    """
+    payment = (
+        db.query(Payment)
+        .filter(
+            Payment.transaction_id == transaction_id,
+            Payment.institution_id == institution_id,
+            Payment.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not payment:
+        raise NotFoundError("No payment found for this verification link")
+    pr = payment_to_response(db, payment)
+    inst_name = None
+    try:
+        t = db.query(Tenant).filter(Tenant.id == institution_id).first()
+        if t:
+            inst_name = t.name
+    except Exception:
+        pass
+    return PaymentPublicVerificationResponse(payment=pr, institution_name=inst_name)
+
+
 def initiate_payment(
     db: Session,
     payment_request: PaymentInitiateRequest,
     current_user: Optional[User] = None,
-    institution_id: Optional[int] = None
+    institution_id: Optional[int] = None,
+    tenant_name: Optional[str] = None,
 ) -> PaymentInitiateResponse:
     """Initiate a payment and send OTP to student email"""
     # Get institution_id
@@ -78,8 +193,10 @@ def initiate_payment(
     if not student:
         raise NotFoundError(f"Student with ID {payment_request.student_id} not found")
     
-    # Verify student email matches
-    if student.email != payment_request.student_email:
+    # Verify student email matches request (case-insensitive)
+    req_em = str(payment_request.student_email or "").strip().lower()
+    st_em = (student.email or "").strip().lower()
+    if req_em != st_em:
         raise ValidationError("Student email does not match")
     
     # Generate transaction ID and OTP
@@ -108,8 +225,23 @@ def initiate_payment(
     db.add(payment)
     db.commit()
     db.refresh(payment)
-    
-    # Send OTP email to student asynchronously
+
+    # Log on the request session before any background work (avoids racing another thread on db)
+    if current_user:
+        try:
+            log_create_activity(
+                db=db,
+                current_user=current_user,
+                entity_type="payment",
+                entity_id=payment.id,
+                entity_name=f"Payment {transaction_id}",
+                institution_id=final_institution_id,
+                content=f"Initiated payment: {payment_request.amount} XAF for {payment_request.reason}",
+            )
+        except Exception as e:
+            logger.warning("Error logging payment activity: %s", e)
+
+    # Send OTP email asynchronously using its own DB session (request session is not thread-safe)
     try:
         email_subject = "Payment Verification OTP"
         html_content = f"""
@@ -149,41 +281,27 @@ Best regards,
 School Management System
         """
         
-        # Send email with tracking asynchronously
         async def send_otp_email():
+            db_email = create_standalone_db_session(tenant_name)
             try:
                 await EmailTracker.send_with_tracking(
-                    db=db,
+                    db=db_email,
                     sender_email=settings.SMTP_FROM_EMAIL,
                     recipient_email=payment_request.student_email,
                     subject=email_subject,
                     html_content=html_content,
                     text_content=text_content,
-                    institution_id=final_institution_id
+                    institution_id=final_institution_id,
                 )
             except Exception as e:
-                logger.error(f"Error sending OTP email: {e}")
-        
+                logger.error("Error sending OTP email: %s", e)
+            finally:
+                db_email.close()
+
         run_async_safe(send_otp_email())
     except Exception as e:
-        logger.error(f"Error setting up OTP email: {e}")
-        # Don't fail the payment initiation if email fails
-    
-    # Log activity
-    if current_user:
-        try:
-            log_create_activity(
-                db=db,
-                current_user=current_user,
-                entity_type="payment",
-                entity_id=payment.id,
-                entity_name=f"Payment {transaction_id}",
-                institution_id=final_institution_id,
-                content=f"Initiated payment: {payment_request.amount} XAF for {payment_request.reason}"
-            )
-        except Exception as e:
-            print(f"Error logging payment activity: {e}")
-    
+        logger.error("Error setting up OTP email: %s", e)
+
     return PaymentInitiateResponse(
         transaction_id=transaction_id,
         message="Payment initiated. OTP sent to your email.",
@@ -235,6 +353,13 @@ def verify_payment(
     
     db.commit()
     db.refresh(payment)
+
+    try:
+        from app.apis.student_payment import apply_completed_online_payment
+
+        apply_completed_online_payment(db, payment)
+    except Exception as e:
+        logger.warning("Could not allocate payment to fee installments: %s", e)
     
     # Log activity
     if current_user:
@@ -251,9 +376,8 @@ def verify_payment(
         except Exception as e:
             print(f"Error logging payment activity: {e}")
     
-    # Convert payment to response
-    payment_response = PaymentResponse.from_payment(payment)
-    
+    payment_response = payment_to_response(db, payment)
+
     return PaymentVerifyResponse(
         success=True,
         transaction_id=payment.transaction_id,
@@ -412,3 +536,29 @@ def delete_payment(
     payment.deleted_at = datetime.utcnow()
     db.commit()
     return True
+
+
+def cancel_student_pending_payment(
+    db: Session,
+    payment_id: int,
+    current_user: User,
+    institution_id: Optional[int] = None,
+) -> None:
+    """Student abandons an incomplete online payment (pending only)."""
+    from app.apis.students import resolve_student_for_logged_in_user
+
+    me = resolve_student_for_logged_in_user(db, current_user)
+    if not me:
+        raise NotFoundError("Student record not found for current user")
+
+    payment = get_payment(db, payment_id, institution_id=institution_id)
+    if payment.student_id != me.id:
+        raise ForbiddenError("You can only remove your own payment records")
+
+    status = (payment.status or "").lower()
+    if status != "pending":
+        raise ValidationError("Only pending payments can be removed. Completed payments stay on file.")
+
+    payment.deleted_at = datetime.utcnow()
+    payment.updated_at = datetime.utcnow()
+    db.commit()

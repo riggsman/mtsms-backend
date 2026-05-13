@@ -1,3 +1,4 @@
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
@@ -258,8 +259,17 @@ def get_user_by_email(db: Session, email: str) -> Optional[User]:
 def update_user(db: Session, user_id: int, user_update: UserUpdate, current_user: Optional[User] = None) -> User:
     """Update a user"""
     user = get_user(db, user_id)
-    
-    update_data = user_update.dict(exclude_unset=True)
+
+    dump = getattr(user_update, "model_dump", None)
+    if callable(dump):
+        update_data = dump(exclude_unset=True)
+    else:
+        update_data = user_update.dict(exclude_unset=True)
+
+    # Never clear password with an empty string (NOT NULL + breaks login).
+    pwd = update_data.get("password")
+    if pwd is not None and (pwd == "" or (isinstance(pwd, str) and not pwd.strip())):
+        update_data.pop("password", None)
 
     # Normalize role metadata aliases into the persisted users.position column.
     # Frontends may send position/designation/title based on module context.
@@ -284,7 +294,11 @@ def update_user(db: Session, user_id: int, user_update: UserUpdate, current_user
         if not is_valid:
             raise ValidationError(error_msg)
         update_data["password"] = hash_password(update_data["password"])
-    
+
+    # Only assign real User columns (avoids crashes from stray keys / future schema drift).
+    allowed_columns = {c.key for c in sa_inspect(User).mapper.column_attrs}
+    update_data = {k: v for k, v in update_data.items() if k in allowed_columns}
+
     # Check if username is being changed and if it's already taken
     if "username" in update_data and update_data["username"] != user.username:
         existing_user = get_user_by_username(db, update_data["username"])
@@ -304,9 +318,11 @@ def update_user(db: Session, user_id: int, user_update: UserUpdate, current_user
     db.commit()
     db.refresh(user)
 
-    email_service = EmailService()
-    EmailService().send_user_update_email(user)
-    
+    try:
+        EmailService.send_user_update_email(user)
+    except Exception as e:
+        logger.warning("send_user_update_email failed for user %s: %s", user.id, e)
+
     # Log activity if current_user is provided
     if current_user:
         try:
@@ -900,3 +916,32 @@ def suspend_user_by_student_id(db: Session, student_id: int, reason: str, curren
         logger.error(f"Error sending suspension email to student {student.email}: {e}")
     
     return user_to_suspend
+
+
+def search_users_for_permissions(db: Session, query: str, limit: int = 20) -> List[User]:
+    """Search users by name, email, phone, or username for permission management"""
+    search_term = f"%{query}%"
+    return db.query(User).filter(
+        User.deleted_at.is_(None),
+        (
+            (User.firstname.ilike(search_term)) |
+            (User.lastname.ilike(search_term)) |
+            (User.email.ilike(search_term)) |
+            (User.phone.ilike(search_term)) |
+            (User.username.ilike(search_term))
+        )
+    ).limit(limit).all()
+
+
+def update_user_permissions(db: Session, user_id: int, permissions: List[str]) -> User:
+    """Update user permissions (add or remove permissions)"""
+    user = get_user(db, user_id)
+    
+    allowed_permissions = {"manage_billing", "view_analytics", "export_data", "manage_teachers", "manage_students"}
+    cleaned_permissions = [p for p in permissions if p in allowed_permissions]
+    
+    user.system_permissions = cleaned_permissions if cleaned_permissions else None
+    db.commit()
+    db.refresh(user)
+    
+    return user

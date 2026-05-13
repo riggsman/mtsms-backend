@@ -4,14 +4,13 @@ from typing import Optional
 from app.schemas.student import StudentRequest, StudentResponse, StudentUpdate
 from app.apis.students import (
     create_student, get_student, get_students,
-    update_student, delete_student
+    update_student, delete_student, resolve_student_for_logged_in_user,
 )
 from app.dependencies.tenantDependency import get_db
 from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.dependencies.institutionDependency import get_institution_id_from_header
 from app.models.user import User
 from app.models.role import UserRole
-from app.models.student import Student
 from app.helpers.pagination import PaginatedResponse
 from app.helpers.branch_scope import effective_branch_scope_id
 from app.helpers.user_roles import user_has_role, user_is_system_admin, user_requires_tenant_scope_for_data
@@ -41,22 +40,9 @@ def get_current_student(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must belong to an institution"
         )
-    
-    # Try to find student by email first
-    student = db.query(Student).filter(
-        Student.email == current_user.email,
-        Student.institution_id == current_user.institution_id,
-        Student.deleted_at.is_(None)
-    ).first()
-    
-    # If not found by email, try by user ID (if student.id matches user.id)
-    if not student and current_user.id:
-        student = db.query(Student).filter(
-            Student.id == current_user.id,
-            Student.institution_id == current_user.institution_id,
-            Student.deleted_at.is_(None)
-        ).first()
-    
+
+    student = resolve_student_for_logged_in_user(db, current_user)
+
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -69,7 +55,7 @@ def get_current_student(
 def create_student_endpoint(
     student_data: StudentRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.STAFF, UserRole.SUPER_ADMIN)),
+    current_user: User = Depends(require_any_role(UserRole.ADMIN,UserRole.SUPER_ADMIN)),
     institution_id: Optional[int] = Depends(get_institution_id_from_header)
 ):
     """Create a new student - institution_id validated from header"""
@@ -187,9 +173,16 @@ def update_student_endpoint(
     student_id: int,
     student_update: StudentUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.STAFF))
+    current_user: User = Depends(
+        require_any_role(
+            UserRole.ADMIN,
+            UserRole.SUPER_ADMIN,
+            UserRole.SECRETARY,
+            UserRole.STAFF,
+        )
+    ),
 ):
-    """Update a student"""
+    """Update a student (admin, super admin, secretary, or staff)."""
     return update_student(db=db, student_id=student_id, student_update=student_update, current_user=current_user)
 
 

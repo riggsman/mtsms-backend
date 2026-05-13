@@ -27,6 +27,7 @@ from app.routes import (
     system_settings,
     subscription_services,
     service_configurations,
+    subscription_plans,
     uploads,
     departments,
     email_logs,
@@ -34,13 +35,23 @@ from app.routes import (
     payments,
     branches,
     fee_structure,
-    # schools,  # Disabled - schools table was dropped by migrations
+    schools,
     student_payments,
     certificates,
+    specializations,
+    payroll,
+    student_dashboard,
+    leave_requests,
+    utility_requests,
+    notifications,
+    academic_year_management,
+    promotions,
+    hr,
+    correspondence,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from app.conf.config import settings
-from scripts.populate_classes import seed_default_classes
+from app.services.startup_seed import run_startup_seed
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -48,6 +59,37 @@ app = FastAPI(
     description="A multi-tenant school management system using FastAPI.",
     version="1.0.0",
 )
+
+# CORS middleware - allow Authorization header
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type", "X-Tenant-Name", "X-Requested-With", "X-Institution-Id"],
+)
+
+# Socket.IO setup - try to initialize, fallback gracefully
+sio = None
+
+try:
+    import socketio
+    sio = socketio.AsyncServer(
+        async_mode='asgi',
+        cors_allowed_origins='*',
+        logger=False,
+        engineio_logger=False,
+    )
+    # Store sio for later use in routes
+    app.state.sio = sio
+    print("[SERVER] Socket.IO enabled")
+except ImportError:
+    print("[SERVER] Socket.IO not installed")
+except Exception as e:
+    print(f"[SERVER] Socket.IO error: {e}")
+
+# Export for uvicorn
+# Use: uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 
 # CORS middleware - handle OPTIONS before any other processing
 @app.middleware("http")
@@ -63,7 +105,7 @@ async def cors_middleware(request: Request, call_next):
             headers={
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Tenant-Name, X-Requested-With, X-Institution-Id",
                 "Access-Control-Allow-Credentials": "true",
             }
         )
@@ -105,6 +147,7 @@ app.include_router(students.student, prefix="/api/v1", tags=["students"])
 app.include_router(teachers.teacher, prefix="/api/v1", tags=["teachers"])
 app.include_router(courses.course, prefix="/api/v1", tags=["courses"])
 app.include_router(departments.department_router, prefix="/api/v1", tags=["departments"])
+app.include_router(specializations.specialization_router, prefix="/api/v1", tags=["specializations"])
 app.include_router(schedules.schedule, prefix="/api/v1", tags=["schedules"])
 app.include_router(activities.activity, prefix="/api/v1", tags=["activities"])
 app.include_router(users.user, prefix="/api/v1", tags=["users"])
@@ -151,6 +194,13 @@ app.include_router(
     tags=["service-configurations"],
 )
 
+# Subscription plans routes
+app.include_router(
+    subscription_plans.router,
+    prefix="/api/v1",
+    tags=["subscription-plans"],
+)
+
 # Email logs routes
 app.include_router(email_logs.router, prefix="/api/v1", tags=["email-logs"])
 
@@ -163,8 +213,7 @@ app.include_router(payments.payment, prefix="/api/v1", tags=["payments"])
 # Fee Structure routes
 app.include_router(fee_structure.fee_structure, prefix="/api/v1", tags=["fee-structure"])
 
-# Schools routes (Engineering, Business, Biomedical with levels) - DISABLED
-# app.include_router(schools.router, prefix="/api/v1", tags=["schools"])
+app.include_router(schools.router, prefix="/api/v1", tags=["schools"])
 
 # Student Payments routes
 app.include_router(student_payments.router, prefix="/api/v1", tags=["student-payments"])
@@ -172,10 +221,55 @@ app.include_router(student_payments.router, prefix="/api/v1", tags=["student-pay
 # Certificate routes (transcripts and result slips)
 app.include_router(certificates.certificate_router, prefix="/api/v1", tags=["certificates"])
 
+app.include_router(payroll.router, prefix="/api/v1", tags=["payroll"])
+app.include_router(student_dashboard.router, prefix="/api/v1", tags=["student-dashboard"])
+
+# Request management routes
+app.include_router(leave_requests.leave_router, prefix="/api/v1", tags=["leave-requests"])
+app.include_router(utility_requests.utility_router, prefix="/api/v1", tags=["utility-requests"])
+
+app.include_router(
+    notifications.notifications_router,
+    prefix="/api/v1",
+    tags=["notifications"],
+)
+app.include_router(
+    academic_year_management.academic_year_router,
+    prefix="/api/v1",
+    tags=["academic-years"],
+)
+app.include_router(
+    promotions.promotions_router,
+    prefix="/api/v1",
+    tags=["promotions"],
+)
+
+app.include_router(
+    hr.hr_router,
+    prefix="/api/v1",
+    tags=["hr"],
+)
+
+app.include_router(
+    correspondence.correspondence_router,
+    prefix="/api/v1",
+    tags=["correspondence"],
+)
+
 # Import models to register them with metadata for table creation
-# from app.models.school import School, SchoolFee  # Tables dropped by migrations
+from app.models.school import School, SchoolFee
 from app.models.fee_structure import FeeStructure, FeeInstallment
 from app.models.student_payment import StudentPayment, StudentPaymentInstallment
+from app.models.payroll_time_entry import PayrollTimeEntry  # noqa: F401 — register metadata
+from app.models.user_push_token import UserPushToken  # noqa: F401 — register tenant metadata
+from app.models.student_year_outcome import StudentYearOutcome  # noqa: F401 — register tenant metadata
+from app.models.student_promotion_history import StudentPromotionHistory  # noqa: F401 — register tenant metadata
+from app.models.student_course_rank import StudentCourseRank  # noqa: F401 — register tenant metadata
+from app.models.staff_document import StaffDocument  # noqa: F401
+from app.models.staff_attendance import StaffAttendance  # noqa: F401
+from app.models.communication import Communication  # noqa: F401
+from app.models.communication_template import CommunicationTemplate  # noqa: F401
+from app.models.circular import Circular  # noqa: F401
 
 # Create metadata database tables (if they don't exist)
 @app.on_event("startup")
@@ -184,7 +278,7 @@ def startup():
     BaseModel_Base.metadata.create_all(bind=engine)
     # Seed default data
     with DefaultSessionLocal() as session:
-        seed_default_classes(session)
+        run_startup_seed(session)
     
     # Start schedule reminder scheduler
     try:
@@ -221,3 +315,45 @@ def api_health_check():
 def test_cors():
     """Test endpoint to verify CORS is working"""
     return {"status": "ok", "message": "CORS test successful!"}
+
+# SSE endpoint for real-time cache invalidation notifications
+from fastapi.responses import StreamingResponse
+import asyncio
+import json
+
+# Store for SSE subscribers
+sse_subscribers = []
+
+@app.get("/api/v1/events/cache", tags=["events"])
+async def cache_events():
+    """
+    SSE endpoint for real-time cache invalidation events.
+    Frontend can subscribe to this endpoint to receive instant notifications.
+    """
+    async def event_generator():
+        # Send initial connection message
+        yield f"data: {json.dumps({'event': 'connected', 'message': 'Connected to cache events'})}\n\n"
+        
+        # Keep connection alive and send periodic heartbeats
+        while True:
+            await asyncio.sleep(30)
+            yield f"data: {json.dumps({'event': 'heartbeat', 'timestamp': str(asyncio.get_event_loop().time())})}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
+
+# Function to broadcast cache events to all SSE subscribers
+async def broadcast_cache_event(data):
+    """Broadcast a cache event to all SSE subscribers"""
+    event_data = f"data: {json.dumps(data)}\n\n"
+    # SSE is one-directional, so we just log this
+    print(f"[SSE] Would broadcast: {data}")
+
+print("[SERVER] Server ready")

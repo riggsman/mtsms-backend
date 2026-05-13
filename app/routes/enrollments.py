@@ -6,15 +6,30 @@ from app.apis.enrollments import (
     create_enrollment, get_enrollment, get_student_enrollments,
     get_course_enrollments, update_enrollment, delete_enrollment, delete_enrollment_by_course_id
 )
+from app.apis.students import resolve_student_for_logged_in_user
 from app.dependencies.tenantDependency import get_db
 from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.models.user import User
 from app.models.role import UserRole
-from app.helpers.pagination import PaginatedResponse
 from app.helpers.user_roles import user_has_role, user_requires_tenant_scope_for_data
 from fastapi import HTTPException, status
 
 enrollment = APIRouter()
+
+
+def _student_self_or_404(db: Session, current_user: User):
+    """
+    Same resolution as GET /students/me: institution-scoped, case-insensitive email,
+    and username/matricule fallbacks. Must match enrollment self-service checks.
+    """
+    student = resolve_student_for_logged_in_user(db, current_user)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student record not found for this user",
+        )
+    return student
+
 
 @enrollment.post("/enrollments", response_model=EnrollmentResponse, status_code=201)
 def create_enrollment_endpoint(
@@ -25,23 +40,10 @@ def create_enrollment_endpoint(
     """Enroll a student in a course. Students can enroll themselves."""
     # Allow students to enroll themselves, or admin/staff to enroll any student
     if user_has_role(current_user, UserRole.STUDENT.value):
-        # Find student by user email
-        from app.models.student import Student
-        student = db.query(Student).filter(Student.email == current_user.email).first()
-        if not student:
-            from fastapi import HTTPException, status
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Student record not found for this user"
-            )
-        # Students can only enroll themselves
-        if enrollment_data.student_id != student.id:
-            from fastapi import HTTPException, status
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Students can only enroll themselves"
-            )
-    
+        student = _student_self_or_404(db, current_user)
+        # Always bind to the resolved student row (ignores mistaken client student_id / user.id fallbacks).
+        enrollment_data = enrollment_data.model_copy(update={"student_id": student.id})
+
     return create_enrollment(db=db, enrollment=enrollment_data, current_user=current_user)
 
 @enrollment.get("/enrollments/{enrollment_id}", response_model=EnrollmentResponse)
@@ -70,24 +72,11 @@ def get_student_enrollments_endpoint(
     
     # Students can only view their own enrollments
     if user_has_role(current_user, UserRole.STUDENT.value):
-        # Find student by user email (tenant-scoped)
-        from app.models.student import Student
-        student = db.query(Student).filter(
-            Student.email == current_user.email,
-            Student.institution_id == institution_id,
-            Student.deleted_at.is_(None)
-        ).first()
-        if not student:
-            from fastapi import HTTPException, status
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Student record not found for this user"
-            )
+        student = _student_self_or_404(db, current_user)
         if student.id != student_id:
-            from fastapi import HTTPException, status
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Students can only view their own enrollments"
+                detail="Students can only view their own enrollments",
             )
     
     return get_student_enrollments(db=db, student_id=student_id, include_course_info=True, institution_id=institution_id)
@@ -132,16 +121,7 @@ def delete_enrollment_endpoint(
         institution_id = current_user.institution_id
     if user_has_role(current_user, UserRole.STUDENT.value):
         # For student self-service, enrollment_id path param is interpreted as course_id.
-        from app.models.student import Student
-        student = db.query(Student).filter(
-            Student.email == current_user.email,
-            Student.deleted_at.is_(None)
-        ).first()
-        if not student:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Student record not found for this user"
-            )
+        student = _student_self_or_404(db, current_user)
         return delete_enrollment_by_course_id(
             db=db,
             course_id=enrollment_id,
@@ -153,13 +133,7 @@ def delete_enrollment_endpoint(
     enrollment_obj = get_enrollment(db, enrollment_id, institution_id=institution_id)
     if user_has_role(current_user, UserRole.STUDENT.value):
         # Defensive check (should not be reached due to early return above).
-        from app.models.student import Student
-        student = db.query(Student).filter(Student.email == current_user.email).first()
-        if not student:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Student record not found for this user"
-            )
+        student = _student_self_or_404(db, current_user)
         if student.id != enrollment_obj.student_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -187,16 +161,7 @@ def drop_enrolled_course_endpoint(
     target_student_id = student_id
 
     if user_has_role(current_user, UserRole.STUDENT.value):
-        from app.models.student import Student
-        student = db.query(Student).filter(
-            Student.email == current_user.email,
-            Student.deleted_at.is_(None)
-        ).first()
-        if not student:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Student record not found for this user"
-            )
+        student = _student_self_or_404(db, current_user)
         target_student_id = student.id
     else:
         if target_student_id is None:

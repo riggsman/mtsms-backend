@@ -1,12 +1,12 @@
 import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
-from app.database.sessionManager import BaseModel_Base
+from app.database.base import DefaultBase
 
 # If you use relationships, also import:
 # from sqlalchemy.orm import relationship
 
 
-class Specialization(BaseModel_Base):
+class Specialization(DefaultBase):
     __tablename__ = "specializations"   # or "specialties" if you prefer American spelling
     id = Column(Integer, primary_key=True)
     # Multi-tenancy isolation (same as Department)

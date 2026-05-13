@@ -1043,7 +1043,7 @@ If you suspect your account has been compromised, please contact your administra
                     <h1>Role Changed Successfully</h1>
                 </div>
                 <div class="content">
-                    <p>Dear {User.username},</p>
+                    <p>Dear {user.username},</p>
                     <p>This is to confirm that your role has been changed {change_info}.</p>
                     <p>If you have any questions or concerns, please contact your administrator immediately.</p>
                 </div>
@@ -1058,7 +1058,7 @@ If you suspect your account has been compromised, please contact your administra
         text_content = f"""
             Role Changed Successfully
             
-            Dear {User.username},
+            Dear {user.username},
             
             This is to confirm that your role has been updated {change_info}.
             

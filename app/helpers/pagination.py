@@ -41,6 +41,11 @@ class PaginatedResponse(BaseModel, Generic[T]):
         )
 
 
+def paginated_response(items: List, total: int, page: int, page_size: int):
+    """Create paginated response from query results"""
+    return PaginatedResponse.create(items, total, page, page_size)
+
+
 def paginate_query(query: Query, page: int = 1, page_size: int = 10) -> tuple[List, int]:
     """
     Paginate a SQLAlchemy query

@@ -1,28 +1,36 @@
 import argon2
+from sqlalchemy import or_
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from app.authentication.authenticator import create_access_token, create_refresh_token, verify_and_decode_access_token, verify_password
 from app.models.user import User
 from app.schemas.login import LoginRequest, LoginResponse
 from app.database.base import get_db_session
-from app.helpers.user_roles import role_string_for_legacy, user_is_system_admin, user_roles_list
+from app.helpers.user_roles import (
+    role_string_for_legacy,
+    user_is_system_admin,
+    user_roles_list,
+    user_system_permissions_list,
+)
 
 
 async def new_login(loginRequest: LoginRequest, db: Session, tenant_name: str = None):
     if not loginRequest.username or not loginRequest.password:
         raise HTTPException(status_code=400, detail="Missing username or password")
     else:
+        print("USER DATA BEFORE PROCESSING LOGIN REQUEST ", loginRequest.username)
         # Try to find user by username first, then by email
-        user = db.query(User).filter(User.username == loginRequest.username).first()
+        user = db.query(User).filter(or_(User.username == loginRequest.username, User.email == loginRequest.username)).first()
+        print("USER DATA DURING LOGIN REQUEST ", user.username if user else "User not found")
         if not user:
             # If not found by username, try email
             user = db.query(User).filter(User.email == loginRequest.username).first()
         
         if not user:
-            raise HTTPException(status_code=400, detail="Invalid username or password")
+            raise HTTPException(status_code=400, detail="Invalid username")
         
         if not verify_password(loginRequest.password, user.password):
-            raise HTTPException(status_code=400, detail="Invalid username or password")
+            raise HTTPException(status_code=400, detail="Invalid password")
         
         # Get tenant name and domain from institution_id if available
         # System admins (roles starting with 'system_') don't need tenant
@@ -66,6 +74,7 @@ async def new_login(loginRequest: LoginRequest, db: Session, tenant_name: str = 
         
         # Prepare user info for response
         from app.schemas.login import UserInfo
+        perm_list = user_system_permissions_list(user) if is_system_admin else []
         user_info = UserInfo(
             id=user.id,
             username=user.username,
@@ -78,7 +87,8 @@ async def new_login(loginRequest: LoginRequest, db: Session, tenant_name: str = 
             domain=final_domain,
             institution_id=user.institution_id,
             mustChangePassword=getattr(user, 'must_change_password', 'false') == "true",
-            language=getattr(user, 'language', 'en') or 'en'
+            language=getattr(user, 'language', 'en') or 'en',
+            system_permissions=perm_list if is_system_admin else None,
         )
         
         return LoginResponse(
@@ -145,18 +155,3 @@ async def refresh_access_token(refresh_token: str):
     finally:
         db.close()
     
-#     hashed_password = hash_password(password)
-#     user_id = len(fake_users_db) + 1
-#     fake_users_db[username] = User(id=user_id, username=username, hashed_password=hashed_password)
-    
-#     return {"msg": "User registered successfully"}
-
-# Example endpoint to login a user and return a JWT token
-# @app.post("/login")
-# async def login(username: str, password: str):
-   
-#     if not user or not verify_password(password, user.hashed_password):
-#         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-#     access_token = create_access_token(data={"sub": user.id})
-#     return {"access_token": access_token, "token_type": "bearer"}

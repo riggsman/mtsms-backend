@@ -5,6 +5,9 @@ from fastapi import APIRouter, Depends, Query, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
+from app.exceptions.exceptions import ForbiddenError
+from app.helpers.logger import logger
+from app.database.base import get_db_session
 
 from app.schemas.payment import (
     PaymentInitiateRequest,
@@ -12,7 +15,8 @@ from app.schemas.payment import (
     PaymentVerifyRequest,
     PaymentVerifyResponse,
     PaymentResponse,
-    PaymentListResponse
+    PaymentListResponse,
+    PaymentPublicVerificationResponse,
 )
 from app.apis.payments import (
     initiate_payment,
@@ -22,9 +26,14 @@ from app.apis.payments import (
     get_payments,
     get_student_payments,
     update_payment,
-    delete_payment
+    delete_payment,
+    payment_to_response,
+    payments_to_responses,
+    get_public_payment_verification,
+    cancel_student_pending_payment,
 )
-from app.dependencies.tenantDependency import get_db
+from app.apis.students import resolve_student_for_logged_in_user
+from app.dependencies.tenantDependency import get_db, get_tenant
 from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.dependencies.institutionDependency import get_institution_id_from_header
 from app.models.user import User
@@ -35,31 +44,44 @@ from app.helpers.user_roles import user_has_role, user_is_system_admin, user_req
 payment = APIRouter()
 
 
+@payment.get(
+    "/payments/public/verify/{transaction_id}",
+    response_model=PaymentPublicVerificationResponse,
+)
+def public_payment_verification(
+    transaction_id: str,
+    institution_id: int = Query(
+        ...,
+        ge=1,
+        description="Institution ID (tenant) — required with transaction_id for verification",
+    ),
+    db: Session = Depends(get_db_session),
+):
+    """
+    Public payment verification (no authentication).
+    Intended for QR codes on receipts; returns the same payment fields as the receipt view.
+    """
+    return get_public_payment_verification(db, transaction_id, institution_id)
+
+
 @payment.post("/payments/initiate", response_model=PaymentInitiateResponse, status_code=201)
 def initiate_payment_endpoint(
     payment_data: PaymentInitiateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant),
-    institution_id: Optional[int] = Depends(get_institution_id_from_header)
+    institution_id: Optional[int] = Depends(get_institution_id_from_header),
+    tenant_name: Optional[str] = Depends(get_tenant),
 ):
     """
     Initiate a payment - sends OTP to student email
     Students can initiate their own payments
     """
-    # Students can only initiate payments for themselves
+    # Students can only initiate payments for their own student record (same resolver as /students/me)
     if user_has_role(current_user, UserRole.STUDENT.value):
-        # Verify the payment is for the current student
-        from app.models.student import Student
-        student = db.query(Student).filter(
-            Student.email == current_user.email,
-            Student.institution_id == current_user.institution_id,
-            Student.deleted_at.is_(None)
-        ).first()
-        
+        student = resolve_student_for_logged_in_user(db, current_user)
         if not student or student.id != payment_data.student_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Students can only initiate payments for themselves"
+            raise ForbiddenError(
+                "Students can only initiate payments for their own student account."
             )
     
     # Get institution_id
@@ -74,7 +96,8 @@ def initiate_payment_endpoint(
         db=db,
         payment_request=payment_data,
         current_user=current_user,
-        institution_id=final_institution_id
+        institution_id=final_institution_id,
+        tenant_name=tenant_name,
     )
 
 
@@ -102,10 +125,11 @@ def verify_payment_endpoint(
     
     # Students can only verify their own payments
     if user_has_role(current_user, UserRole.STUDENT.value):
-        if result.payment.student_email != current_user.email:
+        me = resolve_student_for_logged_in_user(db, current_user)
+        if not me or me.id != result.payment.student_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Students can only verify their own payments"
+                detail="Students can only verify their own payments",
             )
     
     return result
@@ -128,14 +152,8 @@ def get_my_payments(
             detail="This endpoint is only available for students"
         )
     
-    # Get student by email
-    from app.models.student import Student
-    student = db.query(Student).filter(
-        Student.email == current_user.email,
-        Student.institution_id == current_user.institution_id,
-        Student.deleted_at.is_(None)
-    ).first()
-    
+    student = resolve_student_for_logged_in_user(db, current_user)
+
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -151,8 +169,7 @@ def get_my_payments(
         institution_id=current_user.institution_id
     )
     
-    # Convert payments to response format
-    payment_responses = [PaymentResponse.from_payment(p) for p in payments]
+    payment_responses = payments_to_responses(db, payments)
     
     # Filter by status if provided
     if status:
@@ -165,6 +182,33 @@ def get_my_payments(
         page=page,
         page_size=page_size
     )
+
+
+@payment.delete("/payments/my/pending/{payment_id}", status_code=204)
+def cancel_my_pending_payment_endpoint(
+    payment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    """
+    Student only: soft-delete own payment row when status is still **pending**
+    (abandon an incomplete mobile-money / OTP flow).
+    """
+    if not user_has_role(current_user, UserRole.STUDENT.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only students can remove pending payment records",
+        )
+    institution_id = None
+    if current_user and user_requires_tenant_scope_for_data(current_user):
+        institution_id = current_user.institution_id
+    cancel_student_pending_payment(
+        db=db,
+        payment_id=payment_id,
+        current_user=current_user,
+        institution_id=institution_id,
+    )
+    return None
 
 
 @payment.get("/payments/receipt/{receipt_number}", response_model=PaymentResponse)
@@ -189,13 +233,14 @@ def get_receipt_endpoint(
     
     # Students can only view their own receipts
     if user_has_role(current_user, UserRole.STUDENT.value):
-        if payment.student_email != current_user.email:
+        me = resolve_student_for_logged_in_user(db, current_user)
+        if not me or me.id != payment.student_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Students can only view their own receipts"
+                detail="Students can only view their own receipts",
             )
     
-    return PaymentResponse.from_payment(payment)
+    return payment_to_response(db, payment)
 
 
 @payment.get("/payments", response_model=PaginatedResponse[PaymentResponse])
@@ -284,7 +329,7 @@ def list_payments(
     )
     
     return PaginatedResponse.create(
-        items=payments,
+        items=payments_to_responses(db, payments),
         total=total,
         page=page,
         page_size=page_size
@@ -309,13 +354,14 @@ def get_payment_endpoint(
     
     # Students can only view their own payments
     if user_has_role(current_user, UserRole.STUDENT.value):
-        if payment.student_email != current_user.email:
+        me = resolve_student_for_logged_in_user(db, current_user)
+        if not me or me.id != payment.student_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Students can only view their own payments"
+                detail="Students can only view their own payments",
             )
-    
-    return PaymentResponse.from_payment(payment)
+
+    return payment_to_response(db, payment)
 
 
 @payment.put("/payments/{payment_id}", response_model=PaymentResponse)
@@ -342,7 +388,7 @@ def update_payment_endpoint(
         institution_id=institution_id
     )
     
-    return PaymentResponse.from_payment(updated_payment)
+    return payment_to_response(db, updated_payment)
 
 
 @payment.delete("/payments/{payment_id}", status_code=204)

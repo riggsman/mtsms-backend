@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List, Optional
 from app.models.announcement import Announcement
 from app.models.user import User
@@ -6,16 +7,26 @@ from app.schemas.announcement import AnnouncementCreate, AnnouncementUpdate
 from app.exceptions import NotFoundError, ValidationError
 from app.helpers.pagination import paginate_query
 from app.helpers.activity_logger import log_create_activity, log_update_activity, log_delete_activity, get_user_display_name
+from app.database.base import DefaultSessionLocal
+from app.services.fcm_service import send_announcement_push
 import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_announcements(
     db: Session,
     institution_id: int,
     skip: int = 0,
     limit: int = 100,
-    user_role: Optional[str] = None
+    user_role: Optional[str] = None,
+    viewer_user_id: Optional[int] = None,
 ) -> tuple[List[Announcement], int]:
-    """Get list of announcements for a specific institution with pagination, filtered by target audience"""
+    """Get list of announcements for a specific institution with pagination, filtered by target audience.
+
+    Staff users also see every announcement they created (any audience), so their own posts always appear
+    on the staff announcements page.
+    """
     query = db.query(Announcement).filter(
         Announcement.institution_id == institution_id,
         Announcement.deleted_at.is_(None)
@@ -33,12 +44,13 @@ def get_announcements(
                 (Announcement.target_audience == "students") | 
                 (Announcement.target_audience == "all")
             )
-        # If user is staff, show only "staff" or "all" announcements
+        # Staff: audience-relevant posts plus anything this user authored (e.g. targeted at students)
         elif user_role == "staff":
-            query = query.filter(
-                (Announcement.target_audience == "staff") | 
-                (Announcement.target_audience == "all")
-            )
+            audience_ok = Announcement.target_audience.in_(("staff", "all"))
+            if viewer_user_id is not None:
+                query = query.filter(or_(audience_ok, Announcement.created_by == viewer_user_id))
+            else:
+                query = query.filter(audience_ok)
     
     query = query.order_by(Announcement.created_at.desc())
     announcements, total = paginate_query(query, page=(skip // limit) + 1, page_size=limit)
@@ -89,7 +101,25 @@ def create_announcement(
         )
     except Exception as e:
         print(f"Error logging announcement creation activity: {e}")
-    
+
+    try:
+        gdb = DefaultSessionLocal()
+        try:
+            send_announcement_push(
+                db,
+                gdb,
+                institution_id,
+                new_announcement.target_audience or "all",
+                new_announcement.title,
+                (new_announcement.content or "")[:500] or new_announcement.title,
+                new_announcement.id,
+                exclude_user_id=current_user.id,
+            )
+        finally:
+            gdb.close()
+    except Exception as e:
+        logger.warning("Announcement FCM push failed (non-fatal): %s", e, exc_info=True)
+
     return new_announcement
 
 def update_announcement(

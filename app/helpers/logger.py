@@ -4,12 +4,14 @@ from app.conf.config import settings
 
 def setup_logging():
     """Setup application logging"""
+    log_file = settings.LOG_FILE
     log_level = logging.DEBUG if settings.DEBUG else logging.INFO
     
     logging.basicConfig(
         level=log_level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
+            logging.FileHandler(log_file),
             logging.StreamHandler(sys.stdout)
         ]
     )

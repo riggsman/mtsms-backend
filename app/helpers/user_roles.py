@@ -117,6 +117,39 @@ def user_is_system_admin(user: Any) -> bool:
     return any(r.startswith("system_") for r in user_roles_list(user))
 
 
+def user_is_system_super_admin(user: Any) -> bool:
+    return user_has_role(user, "system_super_admin")
+
+
+def user_system_permissions_list(user: Any) -> List[str]:
+    """Granted extras for SYSTEM users (e.g. database_config). system_super_admin implies all."""
+    raw = getattr(user, "system_permissions", None)
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if x is not None and str(x).strip()]
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                return [str(x).strip() for x in data if x is not None and str(x).strip()]
+        except (json.JSONDecodeError, TypeError):
+            return []
+    return []
+
+
+def user_has_system_permission(user: Any, permission: str) -> bool:
+    """SYSTEM users: system_super_admin has all; system_admin needs explicit grant."""
+    p = (permission or "").strip()
+    if not p:
+        return False
+    if user_is_system_super_admin(user):
+        return True
+    if not user_is_system_admin(user):
+        return False
+    return p in user_system_permissions_list(user)
+
+
 def user_can_manage_other_users_passwords(user: Any) -> bool:
     """Admin, super_admin, or any system_* role may change another user's password."""
     return user_has_any_role(user, ["admin", "super_admin"]) or user_is_system_admin(user)

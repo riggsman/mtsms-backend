@@ -194,6 +194,10 @@ dmypy.json
 secrets/
 .secrets/
 
+# Firebase Admin service account JSON in app/firebase/ (optional default for admin_app; do not commit)
+app/firebase/**/*firebase-adminsdk*.json
+app/firebase/**/serviceAccount*.json
+
 # Local Configuration
 config.local.py
 settings.local.py

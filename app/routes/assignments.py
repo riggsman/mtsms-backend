@@ -8,7 +8,9 @@ from app.schemas.assignments import (
 from app.apis.assignments import (
     create_assignment, get_assignment, get_assignments,
     update_assignment, delete_assignment,
-    submit_assignment, get_student_submissions
+    submit_assignment, get_student_submissions,
+    get_submission_counts_by_institution,
+    list_submissions_for_assignment,
 )
 from app.dependencies.tenantDependency import get_db
 from app.dependencies.auth import get_current_user_tenant, require_any_role
@@ -43,12 +45,25 @@ def list_assignments(
     page_size: int = Query(10, ge=1, le=10000),
     course_code: Optional[str] = Query(None),
     lecturer_id: Optional[int] = Query(None),
+    lifecycle: Optional[str] = Query(
+        None,
+        description='Optional: "active" (open for submission) or "due" (overdue or due within due_window_days)',
+    ),
+    due_window_days: int = Query(14, ge=1, le=366),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
     """Get list of assignments with pagination"""
     skip = (page - 1) * page_size
-    
+
+    if lifecycle is not None and lifecycle not in ("", "all", "active", "due"):
+        from app.exceptions import ValidationError
+        raise ValidationError('lifecycle must be one of: "active", "due", or omitted')
+
+    lifecycle_filter = None
+    if lifecycle in ("active", "due"):
+        lifecycle_filter = lifecycle
+
     # Determine institution_id for filtering
     # System admins (roles starting with 'system_') can see all assignments
     # Tenant users must filter by their institution_id
@@ -60,14 +75,16 @@ def list_assignments(
             if not institution_id:
                 from app.exceptions import ValidationError
                 raise ValidationError("User must belong to an institution to view assignments")
-    
+
     assignments, total = get_assignments(
         db=db,
         skip=skip,
         limit=page_size,
         course_code=course_code,
         institution_id=institution_id,
-        lecturer_id=lecturer_id
+        lecturer_id=lecturer_id,
+        lifecycle=lifecycle_filter,
+        due_window_days=due_window_days,
     )
     return PaginatedResponse.create(
         items=assignments,
@@ -75,6 +92,70 @@ def list_assignments(
         page=page,
         page_size=page_size
     )
+
+
+def _submission_to_response_dict(sub) -> dict:
+    """Match AssignmentSubmissionResponse shape (same as student submissions endpoint)."""
+    submission_dict = {
+        "id": sub.id,
+        "assignment_id": sub.assignment_id,
+        "student_id": sub.student_id,
+        "submission_file": sub.submission_file,
+        "submission_date": sub.submission_date,
+        "submitted_at": sub.submission_date,
+        "status": sub.status,
+        "grade": sub.grade,
+        "score": None,
+        "feedback": sub.feedback,
+        "note": getattr(sub, "note", None) or sub.feedback,
+        "created_at": sub.created_at,
+        "updated_at": sub.updated_at,
+    }
+    if sub.grade:
+        try:
+            submission_dict["score"] = float(sub.grade)
+        except (ValueError, TypeError):
+            pass
+    return submission_dict
+
+
+@assignment.get("/assignments/submission-counts")
+def get_submission_counts_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_any_role(UserRole.ADMIN, UserRole.STAFF, UserRole.SUPER_ADMIN, UserRole.TEACHER)
+    ),
+):
+    """Per-assignment submission counts for the current institution (staff / teachers)."""
+    if not current_user.institution_id:
+        from app.exceptions import ValidationError
+        raise ValidationError("User must belong to an institution")
+    counts = get_submission_counts_by_institution(db, current_user.institution_id)
+    return {"counts": {str(k): v for k, v in counts.items()}}
+
+
+@assignment.get(
+    "/assignments/{assignment_id}/submissions",
+    response_model=list[AssignmentSubmissionResponse],
+)
+def list_assignment_submissions_endpoint(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_any_role(UserRole.ADMIN, UserRole.STAFF, UserRole.SUPER_ADMIN, UserRole.TEACHER)
+    ),
+):
+    """List all student submissions for an assignment (download / review)."""
+    if not current_user.institution_id:
+        from app.exceptions import ValidationError
+        raise ValidationError("User must belong to an institution")
+    subs = list_submissions_for_assignment(
+        db=db,
+        assignment_id=assignment_id,
+        institution_id=current_user.institution_id,
+    )
+    return [_submission_to_response_dict(s) for s in subs]
+
 
 @assignment.get("/assignments/{assignment_id}", response_model=AssignmentResponse)
 def get_assignment_endpoint(

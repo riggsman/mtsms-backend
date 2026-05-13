@@ -12,11 +12,13 @@ To use this router in your main FastAPI app, include it like this:
 The endpoints will be available at:
     GET  /api/v1/system/settings
     PUT  /api/v1/system/settings
+    POST /api/v1/system/logo
 """
 
+import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.database.base import get_db_session
@@ -30,10 +32,118 @@ from app.schemas.system_settings import (
     SystemSettingsResponse,
     SystemSettingsState,
     FirebaseMessagingConfig,
+    FirebaseWebClientBundle,
+    FirebaseWebAppConfig,
 )
 
 
 system_settings = APIRouter()
+
+
+def get_firebase_config_from_db_or_env(db: Session):
+    """Get Firebase config from database, with env var fallback."""
+    settings: Optional[SystemSettings] = (
+        db.query(SystemSettings).order_by(SystemSettings.id.asc()).first()
+    )
+    
+    import os
+    
+    firebase_enabled = settings.firebase_messaging_enabled if settings else False
+    firebase_api_key = settings.firebase_api_key if settings else None
+    firebase_auth_domain = settings.firebase_auth_domain if settings else None
+    firebase_project_id = settings.firebase_project_id if settings else None
+    firebase_messaging_sender_id = settings.firebase_messaging_sender_id if settings else None
+    firebase_app_id = settings.firebase_app_id if settings else None
+    firebase_storage_bucket = settings.firebase_storage_bucket if settings else None
+    firebase_measurement_id = settings.firebase_measurement_id if settings else None
+    firebase_vapid_key = settings.firebase_vapid_key if settings else None
+    
+    if not firebase_enabled and os.getenv("FIREBASE_MESSAGING_ENABLED", "").lower() == "true":
+        firebase_enabled = True
+    if not firebase_api_key:
+        firebase_api_key = os.getenv("FIREBASE_API_KEY")
+    if not firebase_auth_domain:
+        firebase_auth_domain = os.getenv("FIREBASE_AUTH_DOMAIN", f"{firebase_project_id}.firebaseapp.com" if firebase_project_id else None)
+    if not firebase_project_id:
+        firebase_project_id = os.getenv("FIREBASE_PROJECT_ID")
+    if not firebase_messaging_sender_id:
+        firebase_messaging_sender_id = os.getenv("FIREBASE_MESSAGING_SENDER_ID")
+    if not firebase_app_id:
+        firebase_app_id = os.getenv("FIREBASE_APP_ID")
+    if not firebase_vapid_key:
+        firebase_vapid_key = os.getenv("FIREBASE_VAPID_KEY")
+    
+    return {
+        "enabled": firebase_enabled,
+        "apiKey": firebase_api_key,
+        "authDomain": firebase_auth_domain,
+        "projectId": firebase_project_id,
+        "messagingSenderId": firebase_messaging_sender_id,
+        "appId": firebase_app_id,
+        "storageBucket": firebase_storage_bucket,
+        "measurementId": firebase_measurement_id,
+        "vapidKey": firebase_vapid_key,
+    }
+
+
+@system_settings.get(
+    "/system/firebase-web-config",
+    response_model=FirebaseWebClientBundle,
+    tags=["System Settings"],
+)
+def get_firebase_web_config(
+    db: Session = Depends(get_db_session),
+):
+    """
+    Public endpoint to serve Firebase web config for browser FCM initialization.
+    Returns only what's needed for getToken() in the browser - no auth required.
+    Falls back to environment variables if database config is incomplete.
+    """
+    config = get_firebase_config_from_db_or_env(db)
+    
+    if not config["enabled"]:
+        return FirebaseWebClientBundle(enabled=False, web=None, vapidKey=None)
+    
+    if not all([
+        config["apiKey"],
+        config["authDomain"],
+        config["projectId"],
+        config["messagingSenderId"],
+        config["appId"],
+    ]):
+        return FirebaseWebClientBundle(enabled=False, web=None, vapidKey=None)
+    
+    web_config = FirebaseWebAppConfig(
+        apiKey=config["apiKey"],
+        authDomain=config["authDomain"],
+        projectId=config["projectId"],
+        messagingSenderId=config["messagingSenderId"],
+        appId=config["appId"],
+        storageBucket=config["storageBucket"],
+        measurementId=config["measurementId"],
+    )
+    
+    return FirebaseWebClientBundle(
+        enabled=True,
+        web=web_config,
+        vapidKey=config["vapidKey"],
+    )
+
+
+@system_settings.get(
+    "/system/cache-version",
+    tags=["System Settings"],
+)
+def get_cache_version(
+    db: Session = Depends(get_db_session),
+):
+    """
+    Get the current cache version for frontend cache synchronization.
+    """
+    settings: Optional[SystemSettings] = (
+        db.query(SystemSettings).order_by(SystemSettings.id.asc()).first()
+    )
+    return {"cache_version": settings.cache_version if settings else "1"}
 
 
 @system_settings.get(
@@ -52,7 +162,6 @@ def get_maintenance_mode(
         db.query(SystemSettings).order_by(SystemSettings.id.asc()).first()
     )
     
-    # If no settings exist, return default (not in maintenance)
     maintenance_mode = settings.maintenance_mode if settings else False
     
     return {"maintenanceMode": maintenance_mode}
@@ -75,7 +184,6 @@ def get_system_settings_state(
         db.query(SystemSettings).order_by(SystemSettings.id.asc()).first()
     )
     
-    # If no settings exist, return defaults
     if settings is None:
         return SystemSettingsState(
             maintenanceMode=False,
@@ -111,7 +219,6 @@ def _get_or_create_singleton(db: Session) -> SystemSettings:
             db.refresh(settings)
         except Exception as e:
             db.rollback()
-            # If creation fails, try to fetch again (might have been created by another request)
             settings = db.query(SystemSettings).order_by(SystemSettings.id.asc()).first()
             if settings is None:
                 raise HTTPException(
@@ -138,26 +245,49 @@ def get_system_settings(
             detail="Only system admin or system super admin can access system settings"
         )
 
+    import os
+
     settings = _get_or_create_singleton(db)
 
-    # Build Firebase config from individual columns
     firebase_cfg: Optional[FirebaseMessagingConfig] = None
-    if settings.firebase_messaging_enabled or any([
-        settings.firebase_api_key,
-        settings.firebase_auth_domain,
-        settings.firebase_project_id,
-        settings.firebase_messaging_sender_id,
-        settings.firebase_app_id,
-        settings.firebase_vapid_key,
-    ]):
+    
+    fb_enabled = settings.firebase_messaging_enabled if settings else False
+    fb_api_key = settings.firebase_api_key if settings else None
+    fb_auth_domain = settings.firebase_auth_domain if settings else None
+    fb_project_id = settings.firebase_project_id if settings else None
+    fb_sender_id = settings.firebase_messaging_sender_id if settings else None
+    fb_app_id = settings.firebase_app_id if settings else None
+    fb_vapid_key = settings.firebase_vapid_key if settings else None
+    fb_storage_bucket = settings.firebase_storage_bucket if settings else None
+    fb_measurement_id = settings.firebase_measurement_id if settings else None
+    
+    if not fb_enabled and os.getenv("FIREBASE_MESSAGING_ENABLED", "").lower() == "true":
+        fb_enabled = True
+    if not fb_api_key:
+        fb_api_key = os.getenv("FIREBASE_API_KEY")
+    if not fb_auth_domain:
+        fb_auth_domain = os.getenv("FIREBASE_AUTH_DOMAIN")
+    if not fb_project_id:
+        fb_project_id = os.getenv("FIREBASE_PROJECT_ID")
+    if not fb_sender_id:
+        fb_sender_id = os.getenv("FIREBASE_MESSAGING_SENDER_ID")
+    if not fb_app_id:
+        fb_app_id = os.getenv("FIREBASE_APP_ID")
+    if not fb_vapid_key:
+        fb_vapid_key = os.getenv("FIREBASE_VAPID_KEY")
+    
+    if fb_enabled or any([fb_api_key, fb_auth_domain, fb_project_id, fb_sender_id, fb_app_id, fb_vapid_key]):
         firebase_cfg = FirebaseMessagingConfig(
-            enabled=settings.firebase_messaging_enabled,
-            apiKey=settings.firebase_api_key,
-            authDomain=settings.firebase_auth_domain,
-            projectId=settings.firebase_project_id,
-            messagingSenderId=settings.firebase_messaging_sender_id,
-            appId=settings.firebase_app_id,
-            vapidKey=settings.firebase_vapid_key,
+            enabled=fb_enabled,
+            apiKey=fb_api_key,
+            authDomain=fb_auth_domain,
+            projectId=fb_project_id,
+            messagingSenderId=fb_sender_id,
+            appId=fb_app_id,
+            vapidKey=fb_vapid_key,
+            storageBucket=fb_storage_bucket,
+            measurementId=fb_measurement_id,
+            serviceAccountUploaded=settings.firebase_service_account_uploaded if settings else False,
         )
 
     return SystemSettingsResponse(
@@ -197,7 +327,6 @@ def update_system_settings(
 
     settings = _get_or_create_singleton(db)
 
-    # Map camelCase payload fields to snake_case model attributes
     if payload.maintenanceMode is not None:
         settings.maintenance_mode = payload.maintenanceMode
     if payload.allowNewRegistrations is not None:
@@ -216,7 +345,6 @@ def update_system_settings(
         settings.maintenance_check_interval = payload.maintenanceCheckInterval
 
     if payload.firebaseMessaging is not None:
-        # Update individual Firebase config columns
         fm = payload.firebaseMessaging
         if fm.enabled is not None:
             settings.firebase_messaging_enabled = fm.enabled
@@ -233,14 +361,11 @@ def update_system_settings(
         if fm.vapidKey is not None:
             settings.firebase_vapid_key = fm.vapidKey
 
-    # Since settings was retrieved from DB, it's already tracked - no need for db.add()
-    # Just commit the changes
     try:
-        db.add(settings)  # Optional, can be omitted since settings is already in the session
+        db.add(settings)
         db.commit()
         db.refresh(settings)
         
-        # Verify the save by checking if updated_at changed
         if settings.updated_at is None:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -253,7 +378,6 @@ def update_system_settings(
             detail=f"Failed to save system settings: {str(e)}"
         )
 
-    # Build Firebase config from individual columns for response
     firebase_cfg: Optional[FirebaseMessagingConfig] = None
     if settings.firebase_messaging_enabled or any([
         settings.firebase_api_key,
@@ -271,6 +395,9 @@ def update_system_settings(
             messagingSenderId=settings.firebase_messaging_sender_id,
             appId=settings.firebase_app_id,
             vapidKey=settings.firebase_vapid_key,
+            storageBucket=settings.firebase_storage_bucket,
+            measurementId=settings.firebase_measurement_id,
+            serviceAccountUploaded=settings.firebase_service_account_uploaded,
         )
 
     return SystemSettingsResponse(
@@ -287,4 +414,67 @@ def update_system_settings(
         created_at=settings.created_at,
         updated_at=settings.updated_at,
     )
+
+
+@system_settings.post(
+    "/system/logo",
+    tags=["System Settings"],
+)
+async def upload_system_logo(
+    logo: Optional[UploadFile] = None,
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Upload system logo (system admin only).
+    Accepts a logo file and stores the URL in system_settings.
+    """
+    from app.helpers.file_upload import save_uploaded_file, delete_file, get_file_url
+    
+    if not user_is_system_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admin can upload system logo"
+        )
+
+    settings = _get_or_create_singleton(db)
+
+    if logo:
+        allowed_types = {'image/jpeg', 'image/jpg', 'image/png', 'image/svg+xml', 'image/webp'}
+        content_type = logo.content_type or ''
+        if content_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
+            )
+
+        old_logo_path = settings.logo_url
+        if old_logo_path:
+            try:
+                delete_file(old_logo_path)
+            except Exception as e:
+                print(f"Warning: Could not delete old logo: {e}")
+
+        file_path, relative_path = await save_uploaded_file(
+            file=logo,
+            tenant_domain='system',
+            file_category='logo'
+        )
+
+        logo_url = get_file_url(relative_path, base_url="/api/v1/uploads")
+        settings.logo_url = logo_url
+
+        try:
+            db.commit()
+            db.refresh(settings)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save logo: {str(e)}"
+            )
+
+        return {"logo": logo_url, "logo_url": logo_url}
+
+    return {"logo": settings.logo_url, "logo_url": settings.logo_url}
 

@@ -15,6 +15,8 @@ class UserInfo(BaseModel):
     institution_id: Optional[int] = None
     mustChangePassword: Optional[bool] = False
     language: Optional[str] = "en"
+    # Extra capabilities for SYSTEM users (e.g. database_config)
+    system_permissions: Optional[List[str]] = None
 
     @model_validator(mode="before")
     @classmethod

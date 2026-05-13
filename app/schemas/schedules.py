@@ -43,6 +43,8 @@ class ScheduleResponse(BaseModel):
     # Enriched data
     course_info: Optional[CourseInfo] = None
     instructor_info: Optional[InstructorInfo] = None
+    payroll_clock_in_code: Optional[str] = None
+    payroll_clock_out_code: Optional[str] = None
 
     class Config:
         from_attributes = True

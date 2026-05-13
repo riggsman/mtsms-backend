@@ -16,7 +16,12 @@ from app.dependencies.auth import get_current_user, require_any_role_admin
 from app.models.user import User
 from app.models.role import UserRole
 from app.conf.config import settings
-from app.helpers.user_roles import user_has_role, user_is_tenant_super_admin_or_system
+from app.helpers.user_roles import (
+    user_has_role,
+    user_is_system_admin,
+    user_is_system_super_admin,
+    user_has_system_permission,
+)
 
 system_config = APIRouter()
 
@@ -26,12 +31,17 @@ def get_database_mode_endpoint(
 ):
     """
     Get the current database architecture mode.
-    Only accessible by super_admin.
+    System super admin always; system admin only with `database_config` permission.
     """
-    if not user_is_tenant_super_admin_or_system(current_user):
+    if not user_is_system_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super_admin or system_super_admin can access system configuration"
+            detail="Only system administrators can view database mode",
+        )
+    if not user_has_system_permission(current_user, "database_config"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not allowed to view database mode for this account",
         )
     
     mode = get_database_mode()
@@ -52,14 +62,14 @@ def update_database_mode_endpoint(
 ):
     """
     Update the database architecture mode.
-    Only accessible by super_admin.
-    
+    Only system super admin (not grantable to system_admin).
+
     WARNING: Changing modes may require data migration!
     """
-    if not user_has_role(current_user, UserRole.SUPER_ADMIN.value):
+    if not user_is_system_super_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super_admin can update system configuration"
+            detail="Only system super admin can change database architecture mode",
         )
     
     # Validate mode

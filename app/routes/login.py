@@ -13,7 +13,9 @@ async def login_user(
     db: Session = Depends(get_db)
 ):
     """User login (requires X-Tenant-Name header)"""
+    # print("LOGIN ROUTER")
     return await new_login(loginRequest=login_request, db=db, tenant_name=tenant_name)
+    
 
 @login.post("/verify_token")
 async def validate_token(request: Request):

@@ -20,6 +20,8 @@ class User(BaseModel_Base):
     password = Column(String(200), nullable=False)
     # JSON array of role strings, e.g. ["admin","staff"]
     role = Column(JSON, nullable=False)
+    # Extra capabilities for SYSTEM users (e.g. ["database_config"]), granted by system_super_admin
+    system_permissions = Column(JSON, nullable=True)
     user_type = Column(String(20), default="TENANT", nullable=False)  # TENANT or SYSTEM - indicates if user was created by tenant admin or system admin
     is_active = Column(String(10), default="active", nullable=False)  # active, inactive, suspended
     must_change_password = Column(String(10), default="false", nullable=False)  # true, false - indicates if user must change password on first login

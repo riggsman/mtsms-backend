@@ -1,6 +1,6 @@
 fastapi[standard]
 sqlalchemy
-# mysql-connector-python
+mysql-connector-python
 passlib[argon2]
 argon2-cffi
 pyjwt
@@ -15,8 +15,13 @@ pymysql
 redis
 python-jose
 aiosmtplib
-reportlab 
-python-docx 
+reportlab
+python-docx
 beautifulsoup4
-APScheduler==3.10.4 
+APScheduler==3.10.4
 pytest-asyncio
+python-socketio
+python-socketio[client]
+# mysql
+firebase-admin
+python-dateutil

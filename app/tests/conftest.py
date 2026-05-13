@@ -59,6 +59,47 @@ def client(db, test_admin_user):
         yield test_client
     app.dependency_overrides.clear()
 
+
+@pytest.fixture(scope="function")
+def client_staff(db, test_staff_user):
+    """Test client authenticated as tenant staff (teacher/staff payroll)."""
+    def override_get_db():
+        try:
+            yield db
+        finally:
+            pass
+
+    def override_get_current_user():
+        return test_staff_user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user_tenant] = override_get_current_user
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="function")
+def client_student(db, test_student_user):
+    """Test client authenticated as tenant student."""
+    def override_get_db():
+        try:
+            yield db
+        finally:
+            pass
+
+    def override_get_current_user():
+        return test_student_user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user_tenant] = override_get_current_user
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
 @pytest.fixture(scope="function")
 def sysadmin_client(db, test_system_admin):
     """Create a test client with system admin user"""

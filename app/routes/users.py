@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 from app.schemas.users import UserRequest, UserResponse, UserUpdate, StudentPasswordAssign, ChangePasswordRequest, SuspendUserRequest
 from pydantic import BaseModel
 from fastapi import HTTPException, status
 from app.apis.users import (
-    create_user, get_user, get_users,
-    update_user, delete_user, assign_student_password, change_password, suspend_user, suspend_user_by_student_id
+    create_user, get_user, get_users, search_users_for_permissions,
+    update_user, delete_user, assign_student_password, change_password, suspend_user, suspend_user_by_student_id,
+    update_user_permissions
 )
 from app.dependencies.tenantDependency import get_db, get_db_for_admin
 from app.dependencies.auth import get_current_user_tenant, require_any_role, require_any_role_admin
@@ -19,9 +20,116 @@ from app.helpers.user_roles import (
     user_can_manage_other_users_passwords,
     user_is_system_admin,
     user_roles_list,
+    user_system_permissions_list,
 )
 
 user = APIRouter()
+
+
+class UserSearchResult(BaseModel):
+    id: int
+    firstname: str
+    lastname: str
+    email: str
+    phone: Optional[str] = None
+    username: str
+    roles: List[str]
+    role: str
+    system_permissions: List[str] = []
+    is_active: str
+    institution_id: Optional[int] = None
+
+
+class UserPermissionsUpdate(BaseModel):
+    permissions: List[str]
+
+
+class KnownPermissionsResponse(BaseModel):
+    known_permissions: List[str]
+
+
+KNOWN_TENANT_PERMISSION_KEYS = ("manage_billing", "view_analytics", "export_data", "manage_teachers", "manage_students")
+
+
+@user.get("/users/search", response_model=List[UserSearchResult])
+def search_users_endpoint(
+    query: str = Query(..., min_length=1, description="Search by name, email, phone, or username"),
+    db: Session = Depends(get_db_for_admin),
+    current_user: User = Depends(require_any_role_admin(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
+):
+    """Search users by name, email, phone, or username for permission management"""
+    users = search_users_for_permissions(db=db, query=query)
+    results = []
+    for u in users:
+        results.append(UserSearchResult(
+            id=u.id,
+            firstname=u.firstname,
+            lastname=u.lastname,
+            email=u.email,
+            phone=u.phone,
+            username=u.username,
+            roles=user_roles_list(u),
+            role=role_string_for_legacy(u),
+            system_permissions=user_system_permissions_list(u),
+            is_active=u.is_active,
+            institution_id=u.institution_id,
+        ))
+    return results
+
+
+@user.get("/users/{user_id}/permissions", response_model=UserSearchResult)
+def get_user_permissions_endpoint(
+    user_id: int,
+    db: Session = Depends(get_db_for_admin),
+    current_user: User = Depends(require_any_role_admin(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
+):
+    """Get user permissions by user ID"""
+    user = get_user(db=db, user_id=user_id)
+    return UserSearchResult(
+        id=user.id,
+        firstname=user.firstname,
+        lastname=user.lastname,
+        email=user.email,
+        phone=user.phone,
+        username=user.username,
+        roles=user_roles_list(user),
+        role=role_string_for_legacy(user),
+        system_permissions=user_system_permissions_list(user),
+        is_active=user.is_active,
+        institution_id=user.institution_id,
+    )
+
+
+@user.put("/users/{user_id}/permissions", response_model=UserSearchResult)
+def update_user_permissions_endpoint(
+    user_id: int,
+    perm_update: UserPermissionsUpdate,
+    db: Session = Depends(get_db_for_admin),
+    current_user: User = Depends(require_any_role_admin(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
+):
+    """Update user permissions (add or remove permissions)"""
+    user = update_user_permissions(db=db, user_id=user_id, permissions=perm_update.permissions)
+    return UserSearchResult(
+        id=user.id,
+        firstname=user.firstname,
+        lastname=user.lastname,
+        email=user.email,
+        phone=user.phone,
+        username=user.username,
+        roles=user_roles_list(user),
+        role=role_string_for_legacy(user),
+        system_permissions=user_system_permissions_list(user),
+        is_active=user.is_active,
+        institution_id=user.institution_id,
+    )
+
+
+@user.get("/users/known-permissions", response_model=KnownPermissionsResponse)
+def get_known_permissions_endpoint(
+    current_user: User = Depends(require_any_role_admin(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
+):
+    """Get list of known permission keys that can be assigned"""
+    return KnownPermissionsResponse(known_permissions=list(KNOWN_TENANT_PERMISSION_KEYS))
 
 @user.post("/users", response_model=UserResponse, status_code=201)
 def create_user_endpoint(
@@ -273,6 +381,59 @@ def suspend_student_endpoint(
         reason=suspend_data.reason,
         current_user=current_user
     )
+
+class UserMeSettingsResponse(BaseModel):
+    language: str = "en"
+    theme: Optional[str] = None
+
+
+class UserMeSettingsUpdate(BaseModel):
+    language: Optional[str] = None
+    theme: Optional[str] = None
+
+
+@user.get("/users/me/settings", response_model=UserMeSettingsResponse)
+def get_my_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    """Current user's UI preferences (language persisted; theme echoed client-side only)."""
+    return UserMeSettingsResponse(
+        language=getattr(current_user, "language", "en") or "en",
+        theme=None,
+    )
+
+
+@user.put("/users/me/settings", response_model=UserMeSettingsResponse)
+def update_my_settings(
+    payload: UserMeSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    """Update language and/or receive echoed theme for client cache (theme not stored server-side)."""
+    if payload.language is not None:
+        lang = payload.language.lower().strip()
+        if lang not in {"en", "fr"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported language. Supported languages: en, fr",
+            )
+        current_user.language = lang
+        db.add(current_user)
+        db.commit()
+        db.refresh(current_user)
+
+    if payload.theme is not None and payload.theme not in {"light", "dark"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid theme. Supported values: light, dark",
+        )
+
+    return UserMeSettingsResponse(
+        language=getattr(current_user, "language", "en") or "en",
+        theme=payload.theme,
+    )
+
 
 class UpdateLanguageRequest(BaseModel):
     language: str

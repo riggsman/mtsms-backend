@@ -1,7 +1,7 @@
 """
 Scheduled task for sending class reminder emails
 """
-import logging
+from app.helpers.logger import logger
 import asyncio
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from app.database.base import get_db_session
 from app.services.schedule_reminder_service import ScheduleReminderService
 
-logger = logging.getLogger(__name__)
 
 # Global scheduler instance
 scheduler = BackgroundScheduler()
@@ -24,6 +23,10 @@ def send_class_reminders():
     try:
         db: Session = next(get_db_session())
         reminder_service = ScheduleReminderService(db)
+        try:
+            reminder_service.auto_generate_payroll_codes_from_schedule()
+        except Exception as e:
+            logger.error(f"Error auto-generating payroll codes from schedules: {str(e)}")
         
         # Get all unique reminder times from tenant settings
         from app.models.tenant_settings import TenantSettings

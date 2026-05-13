@@ -9,6 +9,34 @@ from app.exceptions import NotFoundError, ValidationError
 from app.helpers.pagination import paginate_query
 from app.helpers.activity_logger import log_create_activity, log_update_activity, log_delete_activity
 from datetime import datetime
+from app.models.academic_year import AcademicYear
+from app.services.ranking_jobs import enqueue_rank_recompute
+
+
+def _resolve_academic_year_label(db: Session, institution_id: Optional[int]) -> str:
+    if not institution_id:
+        return str(datetime.utcnow().year)
+    current_year = (
+        db.query(AcademicYear)
+        .filter(
+            AcademicYear.institution_id == institution_id,
+            AcademicYear.deleted_at.is_(None),
+            AcademicYear.is_current.is_(True),
+        )
+        .order_by(AcademicYear.updated_at.desc(), AcademicYear.id.desc())
+        .first()
+    )
+    if not current_year:
+        current_year = (
+            db.query(AcademicYear)
+            .filter(
+                AcademicYear.institution_id == institution_id,
+                AcademicYear.deleted_at.is_(None),
+            )
+            .order_by(AcademicYear.updated_at.desc(), AcademicYear.id.desc())
+            .first()
+        )
+    return current_year.name if current_year and current_year.name else str(datetime.utcnow().year)
 
 def calculate_grade_and_gpa(total_score: Decimal) -> tuple[str, Decimal]:
     """Calculate letter grade and GPA from total score"""
@@ -86,6 +114,17 @@ def create_student_record(db: Session, record: StudentRecordRequest, current_use
                 )
         except Exception as e:
             print(f"Error logging student record creation activity: {e}")
+
+    try:
+        enqueue_rank_recompute(
+            institution_id=new_record.institution_id,
+            course_code=new_record.course_code,
+            academic_year=_resolve_academic_year_label(db, new_record.institution_id),
+            semester_or_term=new_record.semester,
+            reason="score_created",
+        )
+    except Exception as e:
+        print(f"Error enqueueing ranking recompute after create: {e}")
     
     return new_record
 
@@ -185,6 +224,17 @@ def update_student_record(
                 )
         except Exception as e:
             print(f"Error logging student record update activity: {e}")
+
+    try:
+        enqueue_rank_recompute(
+            institution_id=record.institution_id,
+            course_code=record.course_code,
+            academic_year=_resolve_academic_year_label(db, record.institution_id),
+            semester_or_term=record.semester,
+            reason="score_updated",
+        )
+    except Exception as e:
+        print(f"Error enqueueing ranking recompute after update: {e}")
     
     return record
 
@@ -210,5 +260,16 @@ def delete_student_record(db: Session, record_id: int, current_user: Optional[Us
             )
         except Exception as e:
             print(f"Error logging student record deletion activity: {e}")
+
+    try:
+        enqueue_rank_recompute(
+            institution_id=record.institution_id,
+            course_code=record.course_code,
+            academic_year=_resolve_academic_year_label(db, record.institution_id),
+            semester_or_term=record.semester,
+            reason="score_deleted",
+        )
+    except Exception as e:
+        print(f"Error enqueueing ranking recompute after delete: {e}")
     
     return True

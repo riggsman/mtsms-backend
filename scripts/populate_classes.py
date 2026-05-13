@@ -1,74 +1,47 @@
 from datetime import datetime
-from email.mime import text
-from app.models.classes import Class
-from sqlalchemy import event
+from typing import Dict, List
+
 from sqlalchemy.orm import Session
 
-
-# def insert_default_classes(target, connection, **kw):
-#     """Insert default classes for HI and SI after table creation.
-#        Skips if data already exists.
-#     """
-#     # Check if defaults already exist to make it idempotent
-#     result = connection.execute(
-#         text("SELECT COUNT(*) FROM classes WHERE is_custom = false")
-#     ).scalar()
-    
-#     if result > 0:
-#         return  # Defaults already present
-
-#     defaults = []
-
-#     # Higher Institution (HI) defaults
-#     hi_classes = [
-#         {"name": "Level 100", "code": "L100", "institution_level": "HI", "category": "Undergraduate"},
-#         {"name": "Level 200", "code": "L200", "institution_level": "HI", "category": "Undergraduate"},
-#         {"name": "Level 300", "code": "L300", "institution_level": "HI", "category": "Undergraduate"},
-#         {"name": "Level 400", "code": "L400", "institution_level": "HI", "category": "Undergraduate"},
-#     ]
-#     for cls in hi_classes:
-#         defaults.append({
-#             **cls,
-#             "institution_id": 0,      # Use 0 or a sentinel value for global defaults
-#             "is_custom": False,
-#             "level_id": None,
-#             "department_id": None,
-#             "academic_year_id": None,
-#             "capacity": None,
-#             "created_at": datetime.datetime.utcnow(),
-#         })
-
-#     # Secondary Institution (SI) defaults
-#     si_classes = [
-#         {"name": "Form 1", "code": "F1", "institution_level": "SI", "category": "Secondary"},
-#         {"name": "Form 2", "code": "F2", "institution_level": "SI", "category": "Secondary"},
-#         {"name": "Form 3", "code": "F3", "institution_level": "SI", "category": "Secondary"},
-#         {"name": "Form 4", "code": "F4", "institution_level": "SI", "category": "Secondary"},
-#         {"name": "Form 5", "code": "F5", "institution_level": "SI", "category": "Secondary"},
-#         {"name": "Lower Sixth", "code": "L6", "institution_level": "SI", "category": "Advanced"},
-#         {"name": "Upper Sixth", "code": "U6", "institution_level": "SI", "category": "Advanced"},
-#     ]
-#     for cls in si_classes:
-#         defaults.append({
-#             **cls,
-#             "institution_id": 0,
-#             "is_custom": False,
-#             "level_id": None,
-#             "department_id": None,
-#             "academic_year_id": None,
-#             "capacity": None,
-#             "created_at": datetime.datetime.utcnow(),
-#         })
-
-#     # Bulk insert using Core for efficiency and to avoid ORM session issues
-#     if defaults:
-#         connection.execute(Class.__table__.insert(), defaults)
+from app.models.classes import Class
+from app.models.user import User
 
 
-# # Attach the event listener to the table
-# event.listen(Class.__table__, 'after_create', insert_default_classes)
+SYSTEM_DEFAULT_INSTITUTION_ID = 0
 
 
+def _default_classes_payload() -> List[Dict]:
+    payload: List[Dict] = []
+
+    hi_classes = [
+        ("Level 100", "L100", "HI", "HI", False),
+        ("Level 200", "L200", "HI", "HI", False),
+        ("Level 300", "L300", "HI", "HI", False),
+        ("Level 400", "L400", "HI", "HI", False),
+    ]
+    si_classes = [
+        ("Form 1", "F1", "SI", "SI", True),
+        ("Form 2", "F2", "SI", "SI", True),
+        ("Form 3", "F3", "SI", "SI", True),
+        ("Form 4", "F4", "SI", "SI", True),
+        ("Form 5", "F5", "SI", "SI", True),
+        ("Lower Sixth", "L6", "SI", "SI", True),
+        ("Upper Sixth", "U6", "SI", "SI", True),
+    ]
+
+    for name, code, institution_level, category, is_custom in hi_classes + si_classes:
+        payload.append(
+            {
+                "institution_id": SYSTEM_DEFAULT_INSTITUTION_ID,
+                "name": name,
+                "code": code,
+                "institution_level": institution_level,
+                "category": category,
+                "is_custom": is_custom,
+                "created_at": datetime.utcnow(),
+            }
+        )
+    return payload
 
 
 def seed_default_classes(session: Session, force: bool = False):
@@ -76,60 +49,88 @@ def seed_default_classes(session: Session, force: bool = False):
     Seed default classes for HI and SI.
     Runs only once unless force=True.
     """
-    # Check if defaults already exist
-    if not force:
-        count = session.query(Class).filter(Class.is_custom == False).count()
-        if count > 0:
-            print("Default classes already seeded.")
-            return
+    defaults = _default_classes_payload()
+    existing = (
+        session.query(Class)
+        .filter(Class.institution_id == SYSTEM_DEFAULT_INSTITUTION_ID, Class.deleted_at.is_(None))
+        .all()
+    )
+    existing_by_code = {str(item.code).upper().strip(): item for item in existing if item.code}
 
-    print("Seeding default classes...")
+    to_insert: List[Dict] = []
+    to_update = 0
+    for row in defaults:
+        code_key = str(row["code"]).upper().strip()
+        current = existing_by_code.get(code_key)
+        if not current:
+            to_insert.append(row)
+            continue
+        if force:
+            current.name = row["name"]
+            current.institution_level = row["institution_level"]
+            current.category = row["category"]
+            current.is_custom = row["is_custom"]
+            current.updated_at = datetime.utcnow()
+            to_update += 1
 
-    defaults = []
-
-    # Higher Institution (HI) - Levels 100 to 400
-    hi_classes = [
-        ("Level 100", "L100", "HI", "HI"),
-        ("Level 200", "L200", "HI", "HI"),
-        ("Level 300", "L300", "HI", "HI"),
-        ("Level 400", "L400", "HI", "HI"),
-    ]
-    for name, code, inst_level, cat in hi_classes:
-        defaults.append({
-            "institution_id": 0,           # Sentinel value for system defaults
-            "name": name,
-            "code": code,
-            "institution_level": inst_level,
-            "category": cat,
-            "is_custom": False,
-            "created_at": datetime.now(),
-        })
-
-    # Secondary Institution (SI)
-    si_classes = [
-        ("Form 1", "F1", "SI", "SI"),
-        ("Form 2", "F2", "SI", "SI"),
-        ("Form 3", "F3", "SI", "SI"),
-        ("Form 4", "F4", "SI", "SI"),
-        ("Form 5", "F5", "SI", "SI"),
-        ("Lower Sixth", "L6", "SI", "SI"),
-        ("Upper Sixth", "U6", "SI", "SI"),
-    ]
-    for name, code, inst_level, cat in si_classes:
-        defaults.append({
-            "institution_id": 0,
-            "name": name,
-            "code": code,
-            "institution_level": inst_level,
-            "category": cat,
-            "is_custom": True,
-            "created_at": datetime.now(),
-        })
-
-    # Bulk insert
-    if defaults:
-        session.bulk_insert_mappings(Class, defaults)
+    if to_insert:
+        session.bulk_insert_mappings(Class, to_insert)
+    if to_insert or to_update:
         session.commit()
-        print(f"Successfully seeded {len(defaults)} default classes.")
+        print(f"Seeded default classes: inserted={len(to_insert)}, updated={to_update}")
     else:
-        print("No defaults to seed.")
+        print("Default classes already seeded and up-to-date.")
+
+
+def seed_default_admin_user(session: Session, force: bool = False):
+    """
+    Seed default system super admin user.
+    Runs only once unless force=True.
+    """
+    default_user = {
+        "institution_id": None,
+        "branch_id": None,
+        "department_id": None,
+        "position": "System Administrator",
+        "firstname": "System",
+        "middlename": None,
+        "lastname": "Admin",
+        "gender": "male",
+        "address": "System Address",
+        "email": "system@admin.com",
+        "phone": "+237688776677",
+        "username": "systemadmin",
+        "password": "$argon2id$v=19$m=65536,t=3,p=4$+j9nrFWKcY7RGgMgZAyh9A$eWJ8+r5xf0d6WpSkGySLSkvfK+ZiiC3Hh9IvKKJBZSg",
+        "role": ["system_super_admin", "system_admin"],
+        "user_type": "SYSTEM",
+        "is_active": "active",
+        "must_change_password": "false",
+        "profile_picture": None,
+        "language": "en",
+        "created_at": datetime.utcnow(),
+    }
+    existing = session.query(User).filter(User.email == default_user["email"]).first()
+    if not existing:
+        session.add(User(**default_user))
+        session.commit()
+        print("Seeded default system admin user.")
+        return
+
+    if force:
+        existing.firstname = default_user["firstname"]
+        existing.lastname = default_user["lastname"]
+        existing.username = default_user["username"]
+        existing.role = default_user["role"]
+        existing.user_type = default_user["user_type"]
+        existing.is_active = default_user["is_active"]
+        existing.gender = default_user["gender"]
+        existing.address = default_user["address"]
+        existing.phone = default_user["phone"]
+        existing.language = default_user["language"]
+        # Keep existing password unless explicitly forced
+        existing.updated_at = datetime.utcnow()
+        session.commit()
+        print("Updated default system admin user.")
+    else:
+        print("Default system admin user already seeded.")
+

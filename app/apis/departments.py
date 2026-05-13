@@ -68,7 +68,8 @@ def get_departments(
     db: Session,
     skip: int = 0,
     limit: int = 10,
-    institution_id: Optional[int] = None
+    institution_id: Optional[int] = None,
+    school_id: Optional[int] = None,
 ) -> tuple[List[Department], int]:
     """Get list of departments with pagination"""
     query = db.query(Department).filter(Department.deleted_at.is_(None))
@@ -78,6 +79,9 @@ def get_departments(
     # For tenant users, institution_id should always be provided
     if institution_id is not None:
         query = query.filter(Department.institution_id == institution_id)
+
+    if school_id is not None:
+        query = query.filter(Department.school_id == school_id)
     
     return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
 

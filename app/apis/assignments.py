@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from sqlalchemy import func, and_, or_
+from typing import List, Optional, Dict
+from datetime import date, timedelta
 from app.models.assignment import Assignment, AssignmentSubmission
 from app.schemas.assignments import (
     AssignmentRequest, AssignmentUpdate,
@@ -41,20 +43,48 @@ def get_assignments(
     limit: int = 100,
     course_code: Optional[str] = None,
     institution_id: Optional[int] = None,
-    lecturer_id: Optional[int] = None
+    lecturer_id: Optional[int] = None,
+    lifecycle: Optional[str] = None,
+    due_window_days: int = 14,
 ) -> tuple[List[Assignment], int]:
-    """Get list of assignments with pagination"""
+    """Get list of assignments with pagination.
+
+    lifecycle:
+      - "active": still open for submission (due date today or later, or past due with late_penalty > 0)
+      - "due": past due, or due date within the next ``due_window_days`` calendar days (inclusive)
+    """
     query = db.query(Assignment).filter(Assignment.deleted_at.is_(None))
-    
+
     if institution_id:
         query = query.filter(Assignment.institution_id == institution_id)
-    
+
     if lecturer_id:
         query = query.filter(Assignment.lecturer_id == lecturer_id)
-    
+
     if course_code:
         query = query.filter(Assignment.course_code == course_code)
-    
+
+    if lifecycle in ("active", "due"):
+        due_eff = func.coalesce(Assignment.extended_due_date, Assignment.due_date)
+        today = date.today()
+        lp = func.coalesce(Assignment.late_penalty, 0)
+        if lifecycle == "active":
+            query = query.filter(
+                or_(
+                    due_eff >= today,
+                    and_(due_eff < today, lp > 0),
+                )
+            )
+        else:
+            horizon_days = max(1, min(int(due_window_days), 366))
+            horizon = today + timedelta(days=horizon_days)
+            query = query.filter(
+                or_(
+                    due_eff < today,
+                    and_(due_eff >= today, due_eff <= horizon),
+                )
+            )
+
     return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
 
 def update_assignment(db: Session, assignment_id: int, assignment_update: AssignmentUpdate) -> Assignment:
@@ -143,3 +173,38 @@ def get_student_submissions(db: Session, student_id: str) -> List[AssignmentSubm
         AssignmentSubmission.student_id == student_id,
         AssignmentSubmission.deleted_at.is_(None)
     ).all()
+
+
+def get_submission_counts_by_institution(db: Session, institution_id: int) -> Dict[int, int]:
+    """Count non-deleted submissions per assignment for an institution."""
+    rows = (
+        db.query(AssignmentSubmission.assignment_id, func.count(AssignmentSubmission.id))
+        .filter(
+            AssignmentSubmission.institution_id == institution_id,
+            AssignmentSubmission.deleted_at.is_(None),
+        )
+        .group_by(AssignmentSubmission.assignment_id)
+        .all()
+    )
+    return {int(aid): int(n) for aid, n in rows}
+
+
+def list_submissions_for_assignment(
+    db: Session,
+    assignment_id: int,
+    institution_id: int,
+) -> List[AssignmentSubmission]:
+    """All submissions for one assignment (tenant-scoped)."""
+    assignment = get_assignment(db, assignment_id)
+    if assignment.institution_id != institution_id:
+        raise NotFoundError(f"Assignment with ID {assignment_id} not found")
+    return (
+        db.query(AssignmentSubmission)
+        .filter(
+            AssignmentSubmission.assignment_id == assignment_id,
+            AssignmentSubmission.institution_id == institution_id,
+            AssignmentSubmission.deleted_at.is_(None),
+        )
+        .order_by(AssignmentSubmission.submission_date.desc())
+        .all()
+    )

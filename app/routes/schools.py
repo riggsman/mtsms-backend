@@ -6,9 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.dependencies.tenantDependency import get_db
-from app.dependencies.auth import get_current_user_tenant, require_any_role
+from app.dependencies.auth import get_current_user_tenant, get_current_user, require_any_role
 from app.models.user import User
 from app.models.role import UserRole
+from app.models.school import School
 from app.schemas.school import (
     SchoolCreate,
     SchoolUpdate,
@@ -43,8 +44,105 @@ from app.apis.fee_structure import (
     update_installment,
     delete_installment
 )
+from app.helpers.user_roles import user_is_system_admin
 
 router = APIRouter()
+
+
+def require_institution(current_user: User):
+    """Helper to require user to belong to an institution"""
+    if not current_user.institution_id:
+        raise HTTPException(status_code=400, detail="User must belong to an institution")
+    return current_user.institution_id
+
+
+# ============================================
+# System Schools Endpoints (institution_id = 0)
+# ============================================
+
+@router.get("/schools/system", response_model=List[SchoolResponse])
+def list_system_schools(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all system schools (institution_id = 0) - System Admin only"""
+    if not user_is_system_admin(current_user):
+        raise HTTPException(status_code=403, detail="Only system admin can view system schools")
+    
+    schools = db.query(School).filter(School.institution_id == 0).all()
+    return schools
+
+
+@router.post("/schools/system", response_model=SchoolResponse, status_code=201)
+def create_system_school(
+    payload: SchoolCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new system school (institution_id = 0) - System Admin only"""
+    if not user_is_system_admin(current_user):
+        raise HTTPException(status_code=403, detail="Only system admin can create system schools")
+    
+    existing = db.query(School).filter(
+        School.name == payload.name,
+        School.institution_id == 0
+    ).first()
+    
+    if existing:
+        raise HTTPException(status_code=400, detail="System school with this name already exists")
+    
+    school_data = payload.model_dump()
+    school_data['institution_id'] = 0
+    new_school = School(**school_data)
+    db.add(new_school)
+    db.commit()
+    db.refresh(new_school)
+    return new_school
+
+
+@router.post("/schools/{school_id}/copy", response_model=SchoolResponse)
+def copy_system_school(
+    school_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Copy a system school to the current tenant's institution"""
+    # Allow any authenticated user to copy
+    institution_id = current_user.institution_id
+    if not institution_id:
+        raise HTTPException(status_code=400, detail="User must belong to an institution")
+    
+    # Get the system school
+    system_school = db.query(School).filter(
+        School.id == school_id,
+        School.institution_id == 0
+    ).first()
+    
+    if not system_school:
+        raise HTTPException(status_code=404, detail="System school not found")
+    
+    # Check if already copied
+    existing = db.query(School).filter(
+        School.name == system_school.name,
+        School.institution_id == institution_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(status_code=400, detail="School already exists in your institution")
+    
+    # Create copy for tenant
+    new_school = School(
+        name=system_school.name,
+        code=system_school.code,
+        description=system_school.description,
+        is_active=system_school.is_active,
+        sort_order=system_school.sort_order,
+        institution_id=institution_id
+    )
+    db.add(new_school)
+    db.commit()
+    db.refresh(new_school)
+    return new_school
 
 
 def require_institution(current_user: User):

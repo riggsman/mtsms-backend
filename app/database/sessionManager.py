@@ -1,7 +1,16 @@
-from fastapi import Depends, HTTPException
+import time
+from typing import Optional
+try:
+    from fastapi import Depends, HTTPException
+except ImportError:
+    class Depends:
+        def __init__(self, dependency=None): pass
+    class HTTPException(Exception):
+        def __init__(self, status_code=500, detail=None): pass
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.exc import OperationalError
 from app.database.base import get_db_session, DefaultSessionLocal
 
 get_db = get_db_session
@@ -9,16 +18,39 @@ from app.helpers.formater import Format_Helper
 from app.models.tenant import Tenant
 from app.models.system_config import SystemConfig
 
-# import mysql.connector
-# from mysql.connector import Error
+try:
+    import mysql.connector
+    from mysql.connector import Error
+    MYSQL_AVAILABLE = True
+except ImportError:
+    MYSQL_AVAILABLE = False
+    Error = Exception
 from sqlalchemy.ext.declarative import declarative_base
 
 BaseModel_Base = declarative_base()
 
 tenant_engine = {}
 
-# Cache for database mode
 _db_mode_cache = None
+
+
+def create_engine_with_retry(url, max_retries=10, retry_interval=3):
+    for attempt in range(max_retries):
+        try:
+            engine = create_engine(
+                url,
+                pool_pre_ping=True,
+                pool_recycle=3600,
+                pool_timeout=30,
+            )
+            engine.connect()
+            return engine
+        except OperationalError as e:
+            print(f"Database connection attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_interval)
+            else:
+                raise
 
 
 async def create_tenant_database(db_name, user:str | None ="root", password:str | None =""):
@@ -38,7 +70,7 @@ async def create_tenant_database(db_name, user:str | None ="root", password:str 
         cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{tenant_db_name}`")
         print(f"Database '{tenant_db_name}' created successfully.")
 
-        engine = create_engine(f"mysql+pymysql://{user}:{password}@{host}/{tenant_db_name}")
+        engine = create_engine_with_retry(f"mysql+pymysql://{user}:{password}@{host}/{tenant_db_name}")
         BaseModel_Base.metadata.create_all(bind=engine)
 
         cursor.close()
@@ -145,7 +177,7 @@ def get_tenant_db(tenant_name: str):
     try:
         tenant_db_name = Format_Helper(tenant_name).replace_space_with_underscore()
         # Create a new engine for the tenant
-        engine = create_engine(f"mysql+pymysql://root:@localhost/{tenant_db_name}")
+        engine = create_engine_with_retry(f"mysql+pymysql://root:@localhost/{tenant_db_name}")
         print(f"Created new engine for tenant '{tenant_db_name}'")
 
         # Create a sessionmaker for the tenant
@@ -176,3 +208,22 @@ def get_db_session_for_mode(tenant_name: str = None):
         if not tenant_name:
             raise HTTPException(status_code=400, detail="Tenant name is required in multi-tenant mode")
         return get_tenant_db(tenant_name)
+
+
+def create_standalone_db_session(tenant_name: Optional[str] = None) -> Session:
+    """
+    New Session for background/async work (never share a request-scoped Session across threads).
+    Matches shared vs multi-tenant like get_db. Caller must close the session.
+    """
+    mode_normalized = str(get_database_mode() or "shared").lower().strip()
+    is_multi_tenant = mode_normalized in (
+        "multi_tenant",
+        "multi-tenant",
+        "multitenant",
+        "isolated",
+    )
+    if not is_multi_tenant:
+        return get_shared_db()()
+    if tenant_name:
+        return get_tenant_db(tenant_name)()
+    return get_shared_db()()

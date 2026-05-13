@@ -1,542 +1,417 @@
 """
-Seed script to populate the backend database with mock data from frontend
-Run this script after setting up the database to populate initial data
+Comprehensive multi-tenant database seeder.
+Populates core tables with valid relationships and is safe to re-run.
 """
-import sys
 import os
-from datetime import datetime, timedelta
+import sys
+from datetime import UTC, datetime, timedelta
 
-# Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.database.base import get_db_session, DefaultSessionLocal
+from app.authentication.authenticator import hash_password
+from app.database.base import DefaultSessionLocal
+from app.models.academic_year import AcademicYear
+from app.models.activity import Activity
+from app.models.announcement import Announcement
+from app.models.assignment import Assignment
+from app.models.branch import Branch
+from app.models.classes import Class
+from app.models.complaint import Complaint
 from app.models.course import Course
+from app.models.department import Department
+from app.models.enrollment import Enrollment
+from app.models.guardian import Guardian
+from app.models.note import Note
 from app.models.schedule import Schedule
 from app.models.student import Student
-from app.models.teacher import Teacher
-from app.models.user import User
-from app.models.complaint import Complaint
-from app.models.assignment import Assignment
 from app.models.student_record import StudentRecord
-from app.models.department import Department
-import importlib
-_class_module = importlib.import_module('app.models.class')
-SchoolClass = _class_module.Class
-from app.models.academic_year import AcademicYear
-from app.models.guardian import Guardian
-from app.authentication.authenticator import hash_password
-import json
+from app.models.teacher import Teacher
+from app.models.tenant import Tenant
+from app.models.user import User
 
-def seed_departments(db):
-    """Seed departments - required for courses, teachers, students"""
-    departments_data = [
-        {'name': 'Mathematics', 'code': 'MATH'},
-        {'name': 'Science', 'code': 'SCI'},
-        {'name': 'English', 'code': 'ENG'},
-        {'name': 'Computer Science', 'code': 'CS'},
-        {'name': 'Physics', 'code': 'PHY'},
-        {'name': 'Chemistry', 'code': 'CHEM'},
-        {'name': 'Biology', 'code': 'BIO'}
-    ]
-    
-    department_map = {}
-    for dept_data in departments_data:
-        existing = db.query(Department).filter(Department.code == dept_data['code']).first()
-        if not existing:
-            dept = Department(**dept_data)
-            db.add(dept)
-            db.flush()  # Get the ID
-            department_map[dept_data['name']] = dept.id
-            print(f"Added department: {dept_data['name']} (ID: {dept.id})")
-        else:
-            department_map[dept_data['name']] = existing.id
-    
-    db.commit()
-    return department_map
 
-def seed_academic_years(db):
-    """Seed academic years - required for students"""
-    academic_years_data = [
-        {
-            'institution_id': 1,
-            'name': '2023-2024',
-            'start_date': '2023-09-01',
-            'end_date': '2024-06-30',
-            'is_current': True
-        },
-        {
-            'institution_id': 1,
-            'name': '2024-2025',
-            'start_date': '2024-09-01',
-            'end_date': '2025-06-30',
-            'is_current': False
-        }
-    ]
-    
-    academic_year_map = {}
-    for ay_data in academic_years_data:
-        existing = db.query(AcademicYear).filter(AcademicYear.name == ay_data['name']).first()
-        if not existing:
-            ay = AcademicYear(**ay_data)
-            db.add(ay)
-            db.flush()
-            academic_year_map[ay_data['name']] = ay.id
-            print(f"Added academic year: {ay_data['name']} (ID: {ay.id})")
-        else:
-            academic_year_map[ay_data['name']] = existing.id
-    
-    db.commit()
-    return academic_year_map
+def _get_or_create(db, model, lookup: dict, defaults: dict):
+    row = db.query(model).filter_by(**lookup).first()
+    if row:
+        return row, False
+    payload = {**defaults, **lookup}
+    row = model(**payload)
+    db.add(row)
+    db.flush()
+    return row, True
 
-def seed_classes(db, department_map, academic_year_map):
-    """Seed classes - required for students"""
-    classes_data = [
-        {'name': 'Grade 8', 'level_id': 8, 'department_id': department_map.get('Mathematics', 1), 'academic_year_id': list(academic_year_map.values())[0], 'capacity': 30},
-        {'name': 'Grade 9', 'level_id': 9, 'department_id': department_map.get('Mathematics', 1), 'academic_year_id': list(academic_year_map.values())[0], 'capacity': 30},
-        {'name': 'Grade 10', 'level_id': 10, 'department_id': department_map.get('Mathematics', 1), 'academic_year_id': list(academic_year_map.values())[0], 'capacity': 30},
-        {'name': 'Grade 11', 'level_id': 11, 'department_id': department_map.get('Mathematics', 1), 'academic_year_id': list(academic_year_map.values())[0], 'capacity': 30}
-    ]
-    
-    class_map = {}
-    for class_data in classes_data:
-        existing = db.query(SchoolClass).filter(
-            SchoolClass.name == class_data['name'],
-            SchoolClass.academic_year_id == class_data['academic_year_id']
-        ).first()
-        if not existing:
-            cls = SchoolClass(**class_data)
-            db.add(cls)
-            db.flush()
-            class_map[class_data['name']] = cls.id
-            print(f"Added class: {class_data['name']} (ID: {cls.id})")
-        else:
-            class_map[class_data['name']] = existing.id
-    
-    db.commit()
-    return class_map
 
-def seed_guardians(db):
-    """Seed guardians - required for students"""
-    guardians_data = [
+def _seed_tenant_bundle(
+    db,
+    *,
+    now: datetime,
+    tenant_name: str,
+    tenant_domain: str,
+    tenant_category: str,
+    branch_name: str,
+    dept_a_name: str,
+    dept_a_code_suffix: str,
+    dept_b_name: str,
+    dept_b_code_suffix: str,
+    class_code: str,
+    class_name: str,
+    class_level: str,
+    guardian_phone: str,
+    guardian_name: str,
+    teacher_firstname: str,
+    teacher_lastname: str,
+    teacher_email_local: str,
+    teacher_phone: str,
+    teacher_employee_id: str,
+    student_reg: str,
+    student_firstname: str,
+    student_lastname: str,
+    student_email_local: str,
+    student_phone: str,
+    course_a_code: str,
+    course_a_name: str,
+    course_b_code: str,
+    course_b_name: str,
+    schedule_day: str,
+):
+    tenant, _ = _get_or_create(
+        db,
+        Tenant,
+        {"name": tenant_name},
         {
-            'guardian_name': 'Jane Doe',
-            'phone': '+1234567891',
-            'address': '123 Main St, City',
-            'relationship': 'mother',
-            'gender': 'Female',
-            'email': 'jane.doe@email.com'
+            "category": tenant_category,
+            "domain": tenant_domain,
+            "is_active": True,
+            "fee_amount": 120000,
+            "created_at": now,
         },
+    )
+    branch, _ = _get_or_create(
+        db,
+        Branch,
+        {"institution_id": tenant.id, "name": branch_name},
+        {"code": f"BR_{tenant.id}", "is_active": True, "sort_order": 0, "created_at": now},
+    )
+    dept_a, _ = _get_or_create(
+        db,
+        Department,
+        {"code": f"{tenant.id}_{dept_a_code_suffix}"},
+        {"institution_id": tenant.id, "name": dept_a_name, "description": f"{dept_a_name} Department", "created_at": now},
+    )
+    dept_b, _ = _get_or_create(
+        db,
+        Department,
+        {"code": f"{tenant.id}_{dept_b_code_suffix}"},
+        {"institution_id": tenant.id, "name": dept_b_name, "description": f"{dept_b_name} Department", "created_at": now},
+    )
+    year_1, _ = _get_or_create(
+        db,
+        AcademicYear,
+        {"institution_id": tenant.id, "name": "2025/2026"},
+        {"start_date": "2025-09-01", "end_date": "2026-06-30", "is_current": True, "created_at": now},
+    )
+    class_1, _ = _get_or_create(
+        db,
+        Class,
+        {"institution_id": tenant.id, "code": class_code},
         {
-            'guardian_name': 'Robert Smith',
-            'phone': '+1234567893',
-            'address': '456 Oak Ave, City',
-            'relationship': 'father',
-            'gender': 'Male',
-            'email': 'robert.smith@email.com'
+            "name": class_name,
+            "institution_level": class_level,
+            "category": class_level,
+            "is_custom": True,
+            "capacity": 120,
+            "academic_year_id": year_1.id,
+            "department_id": dept_b.id,
+            "created_at": now,
         },
+    )
+    guardian_1, _ = _get_or_create(
+        db,
+        Guardian,
+        {"institution_id": tenant.id, "phone": guardian_phone},
         {
-            'guardian_name': 'Mary Johnson',
-            'phone': '+1234567895',
-            'address': '789 Pine Rd, City',
-            'relationship': 'mother',
-            'gender': 'Female',
-            'email': 'mary.johnson@email.com'
-        }
-    ]
-    
-    guardian_map = {}
-    for i, guardian_data in enumerate(guardians_data):
-        existing = db.query(Guardian).filter(Guardian.phone == guardian_data['phone']).first()
-        if not existing:
-            guardian = Guardian(**guardian_data)
-            db.add(guardian)
-            db.flush()
-            guardian_map[i] = guardian.id
-            print(f"Added guardian: {guardian_data['guardian_name']} (ID: {guardian.id})")
-        else:
-            guardian_map[i] = existing.id
-    
-    db.commit()
-    return guardian_map
+            "guardian_name": guardian_name,
+            "address": "City Center",
+            "relationship": "mother",
+            "gender": "Female",
+            "email": f"guardian_{tenant.id}@{tenant_domain}.local",
+            "created_at": now,
+        },
+    )
+    teacher_1, _ = _get_or_create(
+        db,
+        Teacher,
+        {"employee_id": teacher_employee_id},
+        {
+            "institution_id": tenant.id,
+            "branch_id": branch.id,
+            "firstname": teacher_firstname,
+            "lastname": teacher_lastname,
+            "middlename": "",
+            "dob": "1987-05-10",
+            "gender": "Male",
+            "address": "Faculty Block",
+            "email": f"{teacher_email_local}@{tenant_domain}.local",
+            "phone": teacher_phone,
+            "department_id": dept_b.id,
+            "employee_id": teacher_employee_id,
+            "position": "Lecturer",
+            "qualification": "MSc",
+            "specialization": dept_b_name,
+            "created_at": now,
+        },
+    )
+    admin_user, _ = _get_or_create(
+        db,
+        User,
+        {"email": f"admin{tenant.id}@{tenant_domain}.local"},
+        {
+            "institution_id": tenant.id,
+            "branch_id": branch.id,
+            "department_id": dept_b.id,
+            "firstname": "Tenant",
+            "lastname": "Admin",
+            "middlename": "",
+            "gender": "Male",
+            "address": "Head Office",
+            "phone": f"+23767000{tenant.id:04d}",
+            "username": f"tenant_admin_{tenant.id}",
+            "password": hash_password("Admin@1234"),
+            "role": ["super_admin"],
+            "user_type": "TENANT",
+            "is_active": "active",
+            "must_change_password": "false",
+            "language": "en",
+            "created_at": now,
+        },
+    )
+    student_1, _ = _get_or_create(
+        db,
+        Student,
+        {"student_id": student_reg},
+        {
+            "institution_id": tenant.id,
+            "branch_id": branch.id,
+            "school_id": 1,
+            "firstname": student_firstname,
+            "lastname": student_lastname,
+            "middlename": "",
+            "dob": "2006-08-21",
+            "gender": "Female",
+            "address": "Student Quarters",
+            "email": f"{student_email_local}@{tenant_domain}.local",
+            "phone": student_phone,
+            "class_id": class_1.id,
+            "level": class_code,
+            "type": "Undergraduate",
+            "department_id": dept_b.id,
+            "specialization_id": None,
+            "academic_year_id": year_1.id,
+            "guardian_id": guardian_1.id,
+            "created_at": now,
+        },
+    )
+    course_a, _ = _get_or_create(
+        db,
+        Course,
+        {"code": course_a_code},
+        {
+            "institution_id": tenant.id,
+            "name": course_a_name,
+            "description": f"{course_a_name} Foundation",
+            "department_id": dept_a.id,
+            "credits": 3.0,
+            "semester": 1,
+            "created_at": now,
+        },
+    )
+    course_b, _ = _get_or_create(
+        db,
+        Course,
+        {"code": course_b_code},
+        {
+            "institution_id": tenant.id,
+            "name": course_b_name,
+            "description": f"{course_b_name} Foundation",
+            "department_id": dept_b.id,
+            "credits": 3.0,
+            "semester": 1,
+            "created_at": now,
+        },
+    )
+    _get_or_create(
+        db,
+        Enrollment,
+        {"institution_id": tenant.id, "student_id": student_1.id, "course_id": course_a.id},
+        {"status": "active", "enrollment_date": now, "created_at": now},
+    )
+    _get_or_create(
+        db,
+        Enrollment,
+        {"institution_id": tenant.id, "student_id": student_1.id, "course_id": course_b.id},
+        {"status": "active", "enrollment_date": now, "created_at": now},
+    )
+    _get_or_create(
+        db,
+        Schedule,
+        {"institution_id": tenant.id, "course_name": course_b.name, "day": schedule_day, "start_time": "09:00"},
+        {
+            "instructor": f"{teacher_1.firstname} {teacher_1.lastname}",
+            "end_time": "11:00",
+            "room": "Lab 1",
+            "capacity": 80,
+            "description": f"Weekly {course_b.name} lecture",
+            "created_at": now,
+        },
+    )
+    _get_or_create(
+        db,
+        Assignment,
+        {"institution_id": tenant.id, "course_code": course_b.code, "title": "Intro Project"},
+        {
+            "description": "Build hello-world app",
+            "due_date": (now + timedelta(days=7)).date(),
+            "max_score": 20,
+            "late_penalty": 10,
+            "created_by": "Lecturer",
+            "lecturer_id": teacher_1.id,
+            "created_at": now,
+        },
+    )
+    _get_or_create(
+        db,
+        StudentRecord,
+        {"institution_id": tenant.id, "student_id": student_1.student_id, "course_code": course_b.code, "semester": "Term 1"},
+        {"assignment": 8, "ca": 10, "exam": 65, "total_score": 83, "letter_grade": "B", "gpa": 3.0, "created_at": now},
+    )
+    _get_or_create(
+        db,
+        Announcement,
+        {"institution_id": tenant.id, "title": "Welcome"},
+        {"content": "Welcome to the new academic year.", "target_audience": "all", "created_by": admin_user.id, "created_at": now},
+    )
+    _get_or_create(
+        db,
+        Note,
+        {"institution_id": tenant.id, "title": f"{course_b.name} Notes"},
+        {
+            "course_id": course_b.id,
+            "course_code": course_b.code,
+            "department_id": dept_b.id,
+            "lecturer_id": teacher_1.id,
+            "content": "Week 1 notes",
+            "created_by": admin_user.id,
+            "created_at": now,
+        },
+    )
+    _get_or_create(
+        db,
+        Complaint,
+        {"institution_id": tenant.id, "student_id": student_1.student_id, "caption": "Sample complaint"},
+        {
+            "complaint_type": "academic_record",
+            "contents": "This is a seeded complaint",
+            "is_anonymous": False,
+            "status": "pending",
+            "submission_date": now,
+            "created_at": now,
+        },
+    )
+    _get_or_create(
+        db,
+        Activity,
+        {"institution_id": tenant.id, "action": "Seeded data", "entity_type": "system"},
+        {
+            "entity_id": None,
+            "performed_by": "Seeder",
+            "performer_role": "system_admin",
+            "performer_id": admin_user.id,
+            "content": f"Initial dataset populated for {tenant_name}",
+            "created_at": now,
+        },
+    )
 
-def seed_courses(db, department_map):
-    """Seed courses from frontend mock data"""
-    courses_data = [
-        {
-            'name': 'Mathematics 101',
-            'code': 'MATH101',
-            'department_id': department_map.get('Mathematics', 1),
-            'credits': 3,
-            'description': 'Introduction to Algebra and Calculus'
-        },
-        {
-            'name': 'Science Lab',
-            'code': 'SCI201',
-            'department_id': department_map.get('Science', 2),
-            'credits': 4,
-            'description': 'Chemistry and Physics Laboratory'
-        },
-        {
-            'name': 'English Literature',
-            'code': 'ENG301',
-            'department_id': department_map.get('English', 3),
-            'credits': 3,
-            'description': 'Shakespeare and Modern Literature'
-        },
-        {
-            'name': 'Computer Science',
-            'code': 'CS401',
-            'department_id': department_map.get('Computer Science', 4),
-            'credits': 4,
-            'description': 'Programming Fundamentals'
-        }
-    ]
-    
-    for course_data in courses_data:
-        existing = db.query(Course).filter(Course.code == course_data['code']).first()
-        if not existing:
-            course = Course(**course_data)
-            db.add(course)
-            print(f"Added course: {course_data['code']}")
-    
-    db.commit()
 
-def seed_schedules(db):
-    """Seed schedules from frontend mock data"""
-    schedules_data = [
-        {
-            'course_name': 'Mathematics 101',
-            'instructor': 'Prof. Smith',
-            'day': 'Monday',
-            'start_time': '09:00',
-            'end_time': '10:30',
-            'room': 'Room 101',
-            'capacity': 30,
-            'description': 'Introduction to Algebra'
-        },
-        {
-            'course_name': 'Science Lab',
-            'instructor': 'Dr. Johnson',
-            'day': 'Tuesday',
-            'start_time': '14:00',
-            'end_time': '16:00',
-            'room': 'Lab 205',
-            'capacity': 25,
-            'description': 'Chemistry Laboratory'
-        },
-        {
-            'course_name': 'English Literature',
-            'instructor': 'Ms. Williams',
-            'day': 'Wednesday',
-            'start_time': '10:00',
-            'end_time': '11:30',
-            'room': 'Room 302',
-            'capacity': 35,
-            'description': 'Shakespeare Studies'
-        },
-        {
-            'course_name': 'Computer Science',
-            'instructor': 'Prof. Davis',
-            'day': 'Thursday',
-            'start_time': '13:00',
-            'end_time': '15:00',
-            'room': 'Lab 401',
-            'capacity': 20,
-            'description': 'Programming Lab'
-        },
-        {
-            'course_name': 'Mathematics 101',
-            'instructor': 'Prof. Smith',
-            'day': 'Friday',
-            'start_time': '09:00',
-            'end_time': '10:30',
-            'room': 'Room 101',
-            'capacity': 30,
-            'description': 'Calculus Practice'
-        }
-    ]
-    
-    for schedule_data in schedules_data:
-        existing = db.query(Schedule).filter(
-            Schedule.course_name == schedule_data['course_name'],
-            Schedule.day == schedule_data['day'],
-            Schedule.start_time == schedule_data['start_time']
-        ).first()
-        if not existing:
-            schedule = Schedule(**schedule_data)
-            db.add(schedule)
-            print(f"Added schedule: {schedule_data['course_name']} - {schedule_data['day']}")
-    
-    db.commit()
-
-def seed_teachers(db, department_map):
-    """Seed teachers/lecturers from frontend mock data"""
-    teachers_data = [
-        {
-            'firstname': 'John',
-            'lastname': 'Smith',
-            'email': 'prof.smith@school.com',
-            'phone': '+1234567890',
-            'department_id': department_map.get('Mathematics', 1),
-            'employee_id': 'LEC001',
-            'dob': '1980-01-15',
-            'gender': 'Male',
-            'address': '123 Teacher St',
-            'specialization': 'Algebra and Calculus',
-            'qualification': 'Ph.D. in Mathematics'
-        },
-        {
-            'firstname': 'Jane',
-            'lastname': 'Johnson',
-            'email': 'dr.johnson@school.com',
-            'phone': '+1234567891',
-            'department_id': department_map.get('Science', 2),
-            'employee_id': 'LEC002',
-            'dob': '1975-03-20',
-            'gender': 'Female',
-            'address': '456 Teacher Ave',
-            'specialization': 'Chemistry',
-            'qualification': 'Ph.D. in Chemistry'
-        },
-        {
-            'firstname': 'Sarah',
-            'lastname': 'Williams',
-            'email': 'ms.williams@school.com',
-            'phone': '+1234567892',
-            'department_id': department_map.get('English', 3),
-            'employee_id': 'LEC003',
-            'dob': '1985-07-10',
-            'gender': 'Female',
-            'address': '789 Teacher Rd',
-            'specialization': 'Literature',
-            'qualification': 'M.A. in English Literature'
-        },
-        {
-            'firstname': 'Michael',
-            'lastname': 'Davis',
-            'email': 'prof.davis@school.com',
-            'phone': '+1234567893',
-            'department_id': department_map.get('Computer Science', 4),
-            'employee_id': 'LEC004',
-            'dob': '1978-11-25',
-            'gender': 'Male',
-            'address': '321 Teacher Dr',
-            'specialization': 'Programming',
-            'qualification': 'Ph.D. in Computer Science'
-        }
-    ]
-    
-    for teacher_data in teachers_data:
-        existing = db.query(Teacher).filter(Teacher.email == teacher_data['email']).first()
-        if not existing:
-            teacher = Teacher(**teacher_data)
-            db.add(teacher)
-            print(f"Added teacher: {teacher_data['firstname']} {teacher_data['lastname']}")
-    
-    db.commit()
-
-def seed_students(db, department_map, class_map, academic_year_map, guardian_map):
-    """Seed students from frontend mock data"""
-    students_data = [
-        {
-            'student_id': 'STU001',
-            'firstname': 'Alice',
-            'lastname': 'Brown',
-            'email': 'alice.brown@student.school.com',
-            'phone': '+1234567900',
-            'dob': '2000-01-15',
-            'gender': 'Female',
-            'address': '123 Main St',
-            'class_id': class_map.get('Grade 10', 1),
-            'department_id': department_map.get('Computer Science', 4),
-            'academic_year_id': list(academic_year_map.values())[0],
-            'guardian_id': list(guardian_map.values())[0] if guardian_map else 1
-        },
-        {
-            'student_id': 'STU002',
-            'firstname': 'Bob',
-            'lastname': 'Wilson',
-            'email': 'bob.wilson@student.school.com',
-            'phone': '+1234567901',
-            'dob': '2000-03-20',
-            'gender': 'Male',
-            'address': '456 Oak Ave',
-            'class_id': class_map.get('Grade 10', 1),
-            'department_id': department_map.get('Mathematics', 1),
-            'academic_year_id': list(academic_year_map.values())[0],
-            'guardian_id': list(guardian_map.values())[1] if len(guardian_map) > 1 else 1
-        },
-        {
-            'student_id': 'STU003',
-            'firstname': 'Carol',
-            'lastname': 'Martinez',
-            'email': 'carol.martinez@student.school.com',
-            'phone': '+1234567902',
-            'dob': '1999-07-10',
-            'gender': 'Female',
-            'address': '789 Pine Rd',
-            'class_id': class_map.get('Grade 11', 1),
-            'department_id': department_map.get('Science', 2),
-            'academic_year_id': list(academic_year_map.values())[0],
-            'guardian_id': list(guardian_map.values())[2] if len(guardian_map) > 2 else 1
-        }
-    ]
-    
-    for student_data in students_data:
-        existing = db.query(Student).filter(Student.student_id == student_data['student_id']).first()
-        if not existing:
-            student = Student(**student_data)
-            db.add(student)
-            print(f"Added student: {student_data['student_id']} - {student_data['firstname']} {student_data['lastname']}")
-    
-    db.commit()
-
-def seed_assignments(db):
-    """Seed assignments from frontend mock data"""
-    assignments_data = [
-        {
-            'course_code': 'MATH101',
-            'title': 'Algebra Assignment 1',
-            'description': 'Complete exercises 1-10 from chapter 2',
-            'due_date': (datetime.now() + timedelta(days=7)).date(),
-            'late_penalty': 10,
-            'created_by': 'Prof. Smith'
-        },
-        {
-            'course_code': 'CS401',
-            'title': 'Programming Project',
-            'description': 'Build a calculator application',
-            'due_date': (datetime.now() + timedelta(days=14)).date(),
-            'late_penalty': 5,
-            'created_by': 'Prof. Davis'
-        },
-        {
-            'course_code': 'ENG301',
-            'title': 'Essay on Shakespeare',
-            'description': 'Write a 2000-word essay on Hamlet',
-            'due_date': (datetime.now() + timedelta(days=10)).date(),
-            'late_penalty': 15,
-            'created_by': 'Ms. Williams'
-        }
-    ]
-    
-    for assignment_data in assignments_data:
-        existing = db.query(Assignment).filter(
-            Assignment.course_code == assignment_data['course_code'],
-            Assignment.title == assignment_data['title']
-        ).first()
-        if not existing:
-            assignment = Assignment(**assignment_data)
-            db.add(assignment)
-            print(f"Added assignment: {assignment_data['title']}")
-    
-    db.commit()
-
-def seed_users(db):
-    """Seed users (for testing)"""
-    # Note: institution_id should match an existing institution/tenant
-    # For now, using 1 as default - adjust based on your setup
-    
-    # Hash passwords with Argon2
+def run_seed() -> None:
+    db = DefaultSessionLocal()
     try:
-        admin_password = hash_password('admin123')
-        print(f"✓ Hashed admin password with Argon2")
-    except Exception as e:
-        print(f"✗ Error hashing admin password: {e}")
-        raise
-    
-    try:
-        superadmin_password = hash_password('superadmin123')
-        print(f"✓ Hashed superadmin password with Argon2")
-    except Exception as e:
-        print(f"✗ Error hashing superadmin password: {e}")
-        raise
-    
-    try:
-        secretary_password = hash_password('secretary123')
-        print(f"✓ Hashed secretary password with Argon2")
-    except Exception as e:
-        print(f"✗ Error hashing secretary password: {e}")
-        raise
-    
-    users_data = [
-        {
-            'institution_id': None,  # System admin doesn't belong to a tenant
-            'firstname': 'Super',
-            'lastname': 'Admin',
-            'email': 'superadmin@school.com',
-            'phone': '+1234567801',
-            'username': 'superadmin',
-            'password': superadmin_password,
-            'role': 'system_super_admin',  # System admin role for global admin dashboard
-            'is_active': 'active',
-            'gender': 'Male',
-            'address': 'System Admin Office'
-        }
-    ]
-    
-    for user_data in users_data:
-        existing = db.query(User).filter(User.username == user_data['username']).first()
-        if not existing:
-            user = User(**user_data)
-            db.add(user)
-            print(f"Added user: {user_data['username']}")
-        else:
-            # Update existing user with Argon2 hashed password if it's not already hashed
-            if not existing.password.startswith('$argon2') and not existing.password.startswith('$2b$'):
-                existing.password = user_data['password']
-                print(f"Updated password hash for user: {user_data['username']} (migrated to Argon2)")
-            else:
-                print(f"User {user_data['username']} already exists with hashed password")
-    
-    db.commit()
+        now = datetime.now(UTC).replace(tzinfo=None)
+        print("[seed] Starting comprehensive relational seed...")
 
-def main():
-    """Main function to seed all data"""
-    print("Starting database seeding...")
-    
-    db = next(get_db_session())
-    try:
-        # # Seed in order: dependencies first
-        # print("\n1. Seeding departments...")
-        # department_map = seed_departments(db)
-        
-        print("\n2. Seeding academic years...")
-        academic_year_map = seed_academic_years(db)
-        
-        # print("\n3. Seeding classes...")
-        # class_map = seed_classes(db, department_map, academic_year_map)
-        
-        # print("\n4. Seeding guardians...")
-        # guardian_map = seed_guardians(db)
-        
-        # print("\n5. Seeding courses...")
-        # seed_courses(db, department_map)
-        
-        # print("\n6. Seeding schedules...")
-        # seed_schedules(db)
-        
-        # print("\n7. Seeding teachers...")
-        # seed_teachers(db, department_map)
-        
-        # print("\n8. Seeding students...")
-        # seed_students(db, department_map, class_map, academic_year_map, guardian_map)
-        
-        # print("\n9. Seeding assignments...")
-        # seed_assignments(db)
-        
-        print("\n10. Seeding users...")
-        seed_users(db)
-        
-        print("\nDatabase seeding completed successfully!")
-    except Exception as e:
-        print(f"Error seeding database: {e}")
-        import traceback
-        traceback.print_exc()
+        _seed_tenant_bundle(
+            db,
+            now=now,
+            tenant_name="Demo Academy",
+            tenant_domain="demoacademy",
+            tenant_category="HI",
+            branch_name="Main Campus",
+            dept_a_name="Mathematics",
+            dept_a_code_suffix="MATH",
+            dept_b_name="Computer Science",
+            dept_b_code_suffix="CS",
+            class_code="L100",
+            class_name="Level 100",
+            class_level="HI",
+            guardian_phone="+237600000001",
+            guardian_name="Jane Parent",
+            teacher_firstname="John",
+            teacher_lastname="Lecturer",
+            teacher_email_local="lecturer",
+            teacher_phone="+237600000002",
+            teacher_employee_id="EMP_DEMO_001",
+            student_reg="STU_DEMO_001",
+            student_firstname="Alice",
+            student_lastname="Learner",
+            student_email_local="student",
+            student_phone="+237600000004",
+            course_a_code="MATH101_DEMO",
+            course_a_name="Mathematics 101",
+            course_b_code="CS101_DEMO",
+            course_b_name="Computer Science 101",
+            schedule_day="Monday",
+        )
+
+        _seed_tenant_bundle(
+            db,
+            now=now,
+            tenant_name="Riggs Secondary",
+            tenant_domain="riggssecondary",
+            tenant_category="SI",
+            branch_name="Central Campus",
+            dept_a_name="Science",
+            dept_a_code_suffix="SCI",
+            dept_b_name="Arts",
+            dept_b_code_suffix="ART",
+            class_code="F1",
+            class_name="Form 1",
+            class_level="SI",
+            guardian_phone="+237600000101",
+            guardian_name="Mary Guardian",
+            teacher_firstname="Grace",
+            teacher_lastname="Tutor",
+            teacher_email_local="tutor",
+            teacher_phone="+237600000102",
+            teacher_employee_id="EMP_RIGGS_001",
+            student_reg="STU_RIGGS_001",
+            student_firstname="Brian",
+            student_lastname="Student",
+            student_email_local="learner",
+            student_phone="+237600000103",
+            course_a_code="SCI101_RIGGS",
+            course_a_name="Integrated Science",
+            course_b_code="ART101_RIGGS",
+            course_b_name="Creative Arts",
+            schedule_day="Tuesday",
+        )
+
+        db.commit()
+        print("[seed] Complete. Multi-tenant core tables populated with valid relationships.")
+    except Exception:
         db.rollback()
         raise
     finally:
         db.close()
 
+
 if __name__ == "__main__":
-    main()
+    run_seed()

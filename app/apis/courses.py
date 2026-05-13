@@ -16,6 +16,9 @@ def create_course(db: Session, course: CourseRequest, institution_id: Optional[i
     if not final_institution_id:
         from app.exceptions import ValidationError
         raise ValidationError("institution_id is required. Either provide it in the request body or pass it as a parameter")
+    if course.start_date and course.expected_end_date and course.expected_end_date < course.start_date:
+        from app.exceptions import ValidationError
+        raise ValidationError("expected_end_date must be on or after start_date")
     
     # Check if course code already exists for this institution
     existing = db.query(Course).filter(
@@ -151,12 +154,21 @@ def update_course(
     course = get_course(db, course_id, institution_id=institution_id)
     
     update_data = course_update.dict(exclude_unset=True)
+    if (
+        update_data.get("start_date", course.start_date) is not None
+        and update_data.get("expected_end_date", course.expected_end_date) is not None
+        and update_data.get("expected_end_date", course.expected_end_date) < update_data.get("start_date", course.start_date)
+    ):
+        from app.exceptions import ValidationError
+        raise ValidationError("expected_end_date must be on or after start_date")
     
     # Check code uniqueness if being updated
     if "code" in update_data:
         existing = db.query(Course).filter(
             Course.code == update_data["code"],
-            Course.id != course_id
+            Course.id != course_id,
+            Course.institution_id == course.institution_id,
+            Course.deleted_at.is_(None)
         ).first()
         if existing:
             raise ConflictError(f"Course with code {update_data['code']} already exists")

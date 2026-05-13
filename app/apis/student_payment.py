@@ -85,6 +85,11 @@ def create_student_payment(
     payment_data: StudentPaymentCreate
 ) -> StudentPayment:
     """Create a new student payment record with installments from school fee settings"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"[create_student_payment] institution_id={institution_id}, school_id={payment_data.school_id}, level={payment_data.level}")
+    
     # Validate level
     level = payment_data.level.upper()
     if level not in VALID_LEVELS:
@@ -102,22 +107,56 @@ def create_student_payment(
             f"at {level} level"
         )
     
-    # Get total fee from fee_installments table instead
+    # Get total fee from fee_installments table
     from app.models.fee_structure import FeeInstallment
     total_fee = 0
+    fee_source = None
+    
+    # Filter by tenant_id (institution_id), school_id, and specific level
     installments = db.query(FeeInstallment).filter(
+        FeeInstallment.tenant_id == institution_id,
         FeeInstallment.school_id == payment_data.school_id,
-        FeeInstallment.level == level
+        FeeInstallment.level == level,
+        FeeInstallment.is_active == True
     ).all()
     
+    logger.info(f"[create_student_payment] Level {level}: Found {len(installments)} installments for school={payment_data.school_id}")
+    if installments:
+        fee_source = f"Exact match for {level}"
+        total_fee = sum(float(inst.amount) for inst in installments)
+    
+    # If no specific level found, try without tenant filter but with level
     if not installments:
-        # Fallback to all installments
         installments = db.query(FeeInstallment).filter(
-            FeeInstallment.school_id == payment_data.school_id
+            FeeInstallment.school_id == payment_data.school_id,
+            FeeInstallment.level == level,
+            FeeInstallment.is_active == True
         ).all()
+        logger.info(f"[create_student_payment] Fallback 1: Found {len(installments)} installments without tenant filter")
+        if installments:
+            fee_source = f"Fallback: {level} (no tenant filter)"
+            total_fee = sum(float(inst.amount) for inst in installments)
+    
+    # Last fallback: all active installments for this school (show warning!)
+    if not installments:
+        all_school_instals = db.query(FeeInstallment).filter(
+            FeeInstallment.school_id == payment_data.school_id,
+            FeeInstallment.is_active == True
+        ).all()
+        
+        # Show what levels are available
+        available_levels = list(set([inst.level for inst in all_school_instals]))
+        logger.warning(f"[create_student_payment] No {level} fee found! Available levels: {available_levels}")
+        
+        # Use whatever is available
+        if all_school_instals:
+            installments = all_school_instals
+            fee_source = f"WARNING: Using all levels (no {level} specific fee) - available: {available_levels}"
+            total_fee = sum(float(inst.amount) for inst in installments)
+            logger.warning(f"[create_student_payment] Using fallback fee: {total_fee} from {len(installments)} installments")
     
     if installments:
-        total_fee = sum(float(inst.amount) for inst in installments)
+        logger.info(f"[create_student_payment] Fee source: {fee_source}, Total fee: {total_fee}")
     
     # Create student payment record
     student_payment = StudentPayment(
@@ -250,7 +289,15 @@ def get_payment_status(
     level: Optional[str] = None
 ) -> StudentPaymentStatusResponse:
     """Get payment status for a student"""
-    payment = get_student_payment(db, student_id, institution_id, school_id, level)
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Normalize level to uppercase for consistent matching
+    level_norm = level.upper() if level else None
+    logger.info(f"[get_payment_status] student_id={student_id}, school_id={school_id}, level={level} -> normalized={level_norm}")
+    
+    payment = get_student_payment(db, student_id, institution_id, school_id, level_norm)
+    logger.info(f"[get_payment_status] Found payment: {payment.id if payment else None}, level={payment.level if payment else None}")
     
     if not payment:
         return StudentPaymentStatusResponse(
@@ -332,3 +379,94 @@ def has_overdue_payments(
     ).first()
     
     return overdue is not None
+
+
+def apply_completed_online_payment(db: Session, payment_row) -> None:
+    """
+    After a mobile-money Payment is verified (status=paid), allocate the amount
+    toward StudentPayment installments when a fee plan exists for the student's school/level.
+    """
+    from app.models.payment import Payment
+    from app.models.student import Student
+
+    if not isinstance(payment_row, Payment):
+        return
+    if payment_row.status != "paid":
+        return
+
+    student = (
+        db.query(Student)
+        .filter(Student.id == payment_row.student_id, Student.deleted_at.is_(None))
+        .first()
+    )
+    if not student or not student.school_id:
+        return
+
+    level = (student.level or "").strip().upper()
+    if level not in VALID_LEVELS:
+        return
+
+    sp = get_student_payment(
+        db,
+        payment_row.student_id,
+        payment_row.institution_id,
+        student.school_id,
+        level,
+    )
+    if not sp:
+        return
+
+    remaining = float(payment_row.amount or 0)
+    if remaining <= 0:
+        return
+
+    installments = (
+        db.query(StudentPaymentInstallment)
+        .filter(StudentPaymentInstallment.student_payment_id == sp.id)
+        .order_by(
+            StudentPaymentInstallment.due_date.asc(),
+            StudentPaymentInstallment.id.asc(),
+        )
+        .all()
+    )
+
+    if not installments:
+        paid_so_far = float(sp.total_paid or 0)
+        sp.total_paid = paid_so_far + remaining
+        sp.last_payment_date = datetime.utcnow()
+        tf = float(sp.total_fee_amount or 0)
+        if tf > 0 and float(sp.total_paid or 0) >= tf - 0.01:
+            sp.is_fully_paid = 1
+        db.commit()
+        return
+
+    for inst in installments:
+        if remaining <= 0:
+            break
+        required = float(inst.required_amount or 0)
+        already_paid = float(inst.paid_amount or 0)
+        if inst.is_paid and already_paid >= required - 0.01:
+            continue
+        owed = max(0.0, required - already_paid)
+        if owed <= 0:
+            continue
+        chunk = min(owed, remaining)
+        inst.paid_amount = already_paid + chunk
+        if inst.paid_amount >= required - 0.01:
+            inst.is_paid = 1
+            inst.payment_date = datetime.utcnow()
+        remaining -= chunk
+
+    total_from_installments = sum(float(i.paid_amount or 0) for i in installments)
+    if remaining > 0:
+        total_from_installments += remaining
+
+    sp.total_paid = total_from_installments
+    sp.last_payment_date = datetime.utcnow()
+    tf = float(sp.total_fee_amount or 0)
+    if tf > 0 and total_from_installments >= tf - 0.01:
+        sp.is_fully_paid = 1
+    else:
+        sp.is_fully_paid = 0
+
+    db.commit()

@@ -8,6 +8,7 @@ class DepartmentRequest(BaseModel):
     code: str = Field(..., description="Department code (unique)")
     description: Optional[str] = Field(None, description="Department description")
     head_id: Optional[int] = Field(None, description="Teacher ID who is the department head")
+    school_id: Optional[int] = Field(None, description="Parent school/faculty this department belongs to")
     institution_id: Optional[int] = None
 
 
@@ -16,11 +17,13 @@ class DepartmentUpdate(BaseModel):
     code: Optional[str] = None
     description: Optional[str] = None
     head_id: Optional[int] = None
+    school_id: Optional[int] = None
 
 
 class DepartmentResponse(BaseModel):
     id: int
     institution_id: int
+    school_id: Optional[int] = None
     name: str
     code: str
     description: Optional[str] = None

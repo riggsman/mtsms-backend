@@ -1,21 +1,34 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, File, UploadFile
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 from app.database.base import get_db_session
 from app.dependencies.auth import get_current_user
-from app.helpers.user_roles import user_is_system_admin, user_is_tenant_super_admin_or_system
+from app.helpers.user_roles import (
+    user_is_system_admin,
+    user_is_system_super_admin,
+    user_is_tenant_super_admin_or_system,
+    user_roles_list,
+    user_system_permissions_list,
+)
 from app.models.user import User
-from app.models.role import UserRole
 from app.models.tenant import Tenant
 from app.models.system_config import SystemConfig
+from app.models.system_settings import SystemSettings
 from fastapi import HTTPException, status
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_
 
 from app.routes.system_settings import _get_or_create_singleton
 from app.schemas.system_settings import FirebaseMessagingConfig, SystemSettingsRequest
+from app.schemas.system_user_permissions import (
+    SystemUserPermissionRow,
+    SystemUserPermissionsListResponse,
+    SystemUserPermissionsUpdate,
+)
 
 system_admin = APIRouter()
+
+KNOWN_SYSTEM_PERMISSION_KEYS = ("database_config",)
 
 def check_system_admin(current_user: User):
     """Helper to check if user is system admin"""
@@ -23,6 +36,14 @@ def check_system_admin(current_user: User):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Required system admin role"
+        )
+
+
+def _require_system_super_admin(current_user: User) -> None:
+    if not user_is_system_super_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system super admin can perform this action",
         )
 
 @system_admin.get("/system/stats")
@@ -97,13 +118,13 @@ async def get_system_analytics(
     """Get system analytics data"""
     check_system_admin(current_user)
     
-    # Tenant growth over last 6 months
-    six_months_ago = datetime.utcnow() - timedelta(days=180)
+    # Tenant growth over last 12 months with trend
     tenant_growth = []
+    now = datetime.utcnow()
     
-    for i in range(6):
-        month_start = datetime.utcnow() - timedelta(days=30 * (6 - i))
-        month_end = datetime.utcnow() - timedelta(days=30 * (5 - i))
+    for i in range(12):
+        month_start = now - timedelta(days=30 * (12 - i))
+        month_end = now - timedelta(days=30 * (11 - i))
         
         count = db.query(Tenant).filter(
             and_(
@@ -113,35 +134,133 @@ async def get_system_analytics(
         ).count()
         
         tenant_growth.append({
-            "month": month_start.strftime("%b"),
-            "tenants": count
+            "month": month_start.strftime("%b %Y"),
+            "monthShort": month_start.strftime("%b"),
+            "tenants": count,
+            "cumulative": count
         })
     
-    # User activity (last 7 days)
+    # Calculate cumulative totals
+    cumulative = 0
+    for item in tenant_growth:
+        cumulative += item["tenants"]
+        item["cumulative"] = cumulative
+    
+    # Calculate trend
+    if len(tenant_growth) >= 2:
+        recent_avg = sum(item["tenants"] for item in tenant_growth[-3:]) / min(3, len(tenant_growth))
+        older_avg = sum(item["tenants"] for item in tenant_growth[:-3]) / max(1, len(tenant_growth) - 3)
+        tenant_growth_trend = "up" if recent_avg > older_avg else "down" if recent_avg < older_avg else "stable"
+        tenant_growth_change = ((recent_avg - older_avg) / older_avg * 100) if older_avg > 0 else 0
+    else:
+        tenant_growth_trend = "stable"
+        tenant_growth_change = 0
+    
+    # User activity (last 30 days) with trend
     user_activity = []
-    for i in range(7):
-        date = datetime.utcnow() - timedelta(days=6 - i)
-        # This is simplified - you may need to track actual login activity
-        # For now, we'll use created_at as a proxy
+    
+    for i in range(30):
+        date = now - timedelta(days=29 - i)
         count = db.query(User).filter(
             func.date(User.created_at) == date.date()
         ).count()
         
         user_activity.append({
             "date": date.strftime("%Y-%m-%d"),
-            "activeUsers": count
+            "day": date.strftime("%a"),
+            "activeUsers": count,
+            "newUsers": count
         })
     
-    # System usage stats
-    system_usage = {
-        "totalStorage": "2.5 TB",  # You can calculate this from database sizes
-        "databaseSize": "1.2 TB",
-        "activeConnections": 234  # You can get this from database connection pool
-    }
+    # Calculate cumulative for users
+    cumulative = 0
+    for item in user_activity:
+        cumulative += item["newUsers"]
+        item["cumulative"] = cumulative
+    
+    # Calculate user trend
+    if len(user_activity) >= 7:
+        recent_week = sum(item["activeUsers"] for item in user_activity[-7:])
+        prev_week = sum(item["activeUsers"] for item in user_activity[-14:-7]) if len(user_activity) >= 14 else recent_week
+        user_activity_trend = "up" if recent_week > prev_week else "down" if recent_week < prev_week else "stable"
+        user_activity_change = ((recent_week - prev_week) / prev_week * 100) if prev_week > 0 else 0
+    else:
+        user_activity_trend = "stable"
+        user_activity_change = 0
+    
+    # Total counts
+    total_tenants = db.query(Tenant).count()
+    total_users = db.query(User).count()
+    
+    # System usage stats - dynamic for both Windows and Linux
+    try:
+        import platform
+        import os
+        import shutil
+        from pathlib import Path
+        
+        system_info = platform.system()  # 'Windows' or 'Linux'
+        base_path = Path(__file__).parent.parent
+        
+        # Get storage info
+        try:
+            usage = shutil.disk_usage(base_path.parent if base_path.name == 'app' else base_path)
+            total_storage_gb = usage.total / (1024 ** 3)
+            used_storage_gb = usage.used / (1024 ** 3)
+            free_storage_gb = usage.free / (1024 ** 3)
+            storage_percent = (usage.used / usage.total) * 100 if usage.total > 0 else 0
+        except Exception:
+            total_storage_gb = used_storage_gb = free_storage_gb = storage_percent = 0
+        
+        # Get memory info (works on both Windows and Linux)
+        try:
+            import psutil
+            memory = psutil.virtual_memory()
+            total_memory_gb = memory.total / (1024 ** 3)
+            available_memory_gb = memory.available / (1024 ** 3)
+            memory_percent = memory.percent
+        except ImportError:
+            total_memory_gb = available_memory_gb = memory_percent = 0
+        
+        # Get database connection info
+        try:
+            from app.database.base import engine
+            active_connections = engine.pool.size()
+            checked_out = engine.pool.checkedout()
+        except Exception:
+            active_connections = checked_out = 0
+        
+        system_usage = {
+            "platform": system_info,
+            "pythonVersion": platform.python_version(),
+            "totalStorageGB": round(total_storage_gb, 2),
+            "usedStorageGB": round(used_storage_gb, 2),
+            "freeStorageGB": round(free_storage_gb, 2),
+            "storagePercent": round(storage_percent, 2),
+            "totalMemoryGB": round(total_memory_gb, 2) if total_memory_gb > 0 else "N/A",
+            "availableMemoryGB": round(available_memory_gb, 2) if available_memory_gb > 0 else "N/A",
+            "memoryPercent": round(memory_percent, 2) if memory_percent > 0 else "N/A",
+            "activeConnections": active_connections,
+            "checkedOutConnections": checked_out,
+            "processorCount": platform.python_version() and os.cpu_count() or "N/A",
+            "machine": platform.machine(),
+            "processor": platform.processor() or platform.system(),
+        }
+    except Exception as e:
+        system_usage = {
+            "error": str(e),
+            "platform": "unknown"
+        }
     
     return {
         "tenantGrowth": tenant_growth,
+        "tenantGrowthTrend": tenant_growth_trend,
+        "tenantGrowthChange": round(tenant_growth_change, 1),
+        "totalTenants": total_tenants,
         "userActivity": user_activity,
+        "userActivityTrend": user_activity_trend,
+        "userActivityChange": round(user_activity_change, 1),
+        "totalUsers": total_users,
         "systemUsage": system_usage
     }
 
@@ -175,8 +294,26 @@ async def get_system_settings(
         "allowNewRegistrations": True,
         "maxTenants": 100,
         "sessionTimeout": 30,
-        "emailNotifications": True
+        "emailNotifications": True,
+        "firebaseMessaging": None
     }
+    
+    # Fetch firebase config from system_settings table
+    from app.models.system_settings import SystemSettings as GlobalSystemSettings
+    sys_settings = db.query(GlobalSystemSettings).order_by(GlobalSystemSettings.id.asc()).first()
+    if sys_settings and (sys_settings.firebase_messaging_enabled or sys_settings.firebase_api_key):
+        defaults["firebaseMessaging"] = {
+            "enabled": sys_settings.firebase_messaging_enabled or False,
+            "apiKey": sys_settings.firebase_api_key,
+            "authDomain": sys_settings.firebase_auth_domain,
+            "projectId": sys_settings.firebase_project_id,
+            "storageBucket": sys_settings.firebase_storage_bucket,
+            "messagingSenderId": sys_settings.firebase_messaging_sender_id,
+            "appId": sys_settings.firebase_app_id,
+            "vapidKey": sys_settings.firebase_vapid_key,
+            "measurementId": sys_settings.firebase_measurement_id,
+            "serviceAccountUploaded": sys_settings.firebase_service_account_uploaded or False,
+        }
     
     return {**defaults, **settings_map}
 
@@ -263,6 +400,10 @@ async def update_system_settings(
             settings.firebase_app_id = fm.appId
         if fm.vapidKey is not None:
             settings.firebase_vapid_key = fm.vapidKey
+        if fm.storageBucket is not None:
+            settings.firebase_storage_bucket = fm.storageBucket
+        if fm.measurementId is not None:
+            settings.firebase_measurement_id = fm.measurementId
 
     # Since settings was retrieved from DB, it's already tracked - no need for db.add()
     # Just commit the changes
@@ -302,6 +443,124 @@ async def update_system_settings(
             messagingSenderId=settings.firebase_messaging_sender_id,
             appId=settings.firebase_app_id,
             vapidKey=settings.firebase_vapid_key,
+            storageBucket=settings.firebase_storage_bucket,
+            measurementId=settings.firebase_measurement_id,
+            serviceAccountUploaded=settings.firebase_service_account_uploaded,
         )
     
     return {"message": "Settings updated successfully"}
+
+
+@system_admin.post("/system/firebase-service-account")
+async def upload_firebase_service_account(
+    file_data: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session)
+):
+    """
+    Upload Firebase service account JSON file for FCM Admin SDK.
+    File is saved to app/firebase/serviceAccount.json
+    """
+    check_system_admin(current_user)
+    
+    from pathlib import Path
+    
+    firebase_dir = Path(__file__).parent.parent / "firebase"
+    firebase_dir.mkdir(exist_ok=True)
+    file_path = firebase_dir / "serviceAccount.json"
+    
+    try:
+        content = await file_data.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        settings = db.query(SystemSettings).order_by(SystemSettings.id.asc()).first()
+        if settings:
+            settings.firebase_service_account_uploaded = True
+            db.commit()
+        
+        return {"message": "Service account uploaded", "path": str(file_path)}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save file: {str(e)}"
+        )
+
+
+@system_admin.get(
+    "/system/system-users/permissions",
+    response_model=SystemUserPermissionsListResponse,
+)
+async def list_system_users_permissions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    """List SYSTEM users and their extra capability keys (system super admin only)."""
+    _require_system_super_admin(current_user)
+    rows = (
+        db.query(User)
+        .filter(
+            User.user_type == "SYSTEM",
+            User.deleted_at.is_(None),
+        )
+        .order_by(User.id.asc())
+        .all()
+    )
+    items: List[SystemUserPermissionRow] = []
+    for u in rows:
+        items.append(
+            SystemUserPermissionRow(
+                id=u.id,
+                username=u.username,
+                email=u.email,
+                firstname=u.firstname,
+                lastname=u.lastname,
+                roles=user_roles_list(u),
+                system_permissions=user_system_permissions_list(u),
+            )
+        )
+    return SystemUserPermissionsListResponse(
+        items=items,
+        known_permissions=list(KNOWN_SYSTEM_PERMISSION_KEYS),
+    )
+
+
+@system_admin.put(
+    "/system/system-users/{user_id}/permissions",
+    response_model=SystemUserPermissionRow,
+)
+async def update_system_user_permissions(
+    user_id: int,
+    body: SystemUserPermissionsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    """Grant or revoke extra capabilities for a SYSTEM user (system super admin only)."""
+    _require_system_super_admin(current_user)
+    target = (
+        db.query(User)
+        .filter(
+            User.id == user_id,
+            User.user_type == "SYSTEM",
+            User.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="System user not found")
+
+    allowed = set(KNOWN_SYSTEM_PERMISSION_KEYS)
+    cleaned = [p for p in (body.system_permissions or []) if p in allowed]
+    target.system_permissions = cleaned or None
+    db.commit()
+    db.refresh(target)
+
+    return SystemUserPermissionRow(
+        id=target.id,
+        username=target.username,
+        email=target.email,
+        firstname=target.firstname,
+        lastname=target.lastname,
+        roles=user_roles_list(target),
+        system_permissions=user_system_permissions_list(target),
+    )

@@ -13,9 +13,12 @@ from app.models.user import User
 from app.models.course import Course
 from app.models.schedule_reminder import ScheduleReminder
 from app.models.tenant_settings import TenantSettings
+from app.models.announcement import Announcement
+from app.models.teacher import Teacher
 from app.services.email_service import EmailService
 from app.conf.config import settings
 from app.helpers.user_roles import role_column_contains_role
+from app.apis import payroll as payroll_api
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,117 @@ class ScheduleReminderService:
     
     def __init__(self, db: Session):
         self.db = db
+
+    def _find_teacher_for_schedule(self, schedule: Schedule) -> Optional[Teacher]:
+        parts = (schedule.instructor or "").split()
+        q = self.db.query(Teacher).filter(
+            Teacher.institution_id == schedule.institution_id,
+            Teacher.deleted_at.is_(None),
+        )
+        if len(parts) >= 2:
+            q = q.filter(
+                Teacher.firstname.ilike(f"%{parts[0]}%"),
+                Teacher.lastname.ilike(f"%{parts[-1]}%"),
+            )
+        else:
+            q = q.filter(
+                or_(
+                    Teacher.firstname.ilike(f"%{schedule.instructor}%"),
+                    Teacher.lastname.ilike(f"%{schedule.instructor}%"),
+                    Teacher.email.ilike(f"%{schedule.instructor}%"),
+                    Teacher.employee_id.ilike(f"%{schedule.instructor}%"),
+                )
+            )
+        return q.first()
+
+    def _find_course_code_for_schedule(self, schedule: Schedule) -> Optional[str]:
+        c = self.db.query(Course).filter(
+            Course.institution_id == schedule.institution_id,
+            Course.deleted_at.is_(None),
+            Course.name == schedule.course_name,
+        ).first()
+        if c and c.code:
+            return c.code
+        return None
+
+    def _create_auto_announcement(self, institution_id: int, title: str, content: str) -> None:
+        existing = self.db.query(Announcement).filter(
+            Announcement.institution_id == institution_id,
+            Announcement.title == title,
+            Announcement.content == content,
+            Announcement.deleted_at.is_(None),
+        ).first()
+        if existing:
+            return
+        ann = Announcement(
+            institution_id=institution_id,
+            title=title,
+            content=content,
+            target_audience="all",
+            created_by=0,
+        )
+        self.db.add(ann)
+        self.db.commit()
+
+    def auto_generate_payroll_codes_from_schedule(self) -> None:
+        now = datetime.now()
+        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_name = day_names[now.weekday()]
+        now_hm = now.strftime('%H:%M')
+        plus10_hm = (now + timedelta(minutes=10)).strftime('%H:%M')
+
+        auto_on_insts = {
+            x.institution_id
+            for x in self.db.query(TenantSettings).filter(
+                TenantSettings.payroll_auto_generate_codes == True  # noqa: E712
+            ).all()
+        }
+        if not auto_on_insts:
+            return
+
+        schedules = self.db.query(Schedule).filter(
+            Schedule.deleted_at.is_(None),
+            Schedule.day == day_name,
+            Schedule.institution_id.in_(list(auto_on_insts)),
+            or_(Schedule.start_time == now_hm, Schedule.end_time == plus10_hm),
+        ).all()
+
+        for sch in schedules:
+            teacher = self._find_teacher_for_schedule(sch)
+            course_code = self._find_course_code_for_schedule(sch)
+            if not teacher or not course_code:
+                continue
+            if sch.start_time == now_hm:
+                e = payroll_api.auto_generate_codes_for_schedule(
+                    self.db,
+                    institution_id=sch.institution_id,
+                    teacher_id=teacher.id,
+                    course_code=course_code,
+                    generated_by_user_id=0,
+                    regenerate_clockout_only=False,
+                )
+                if e:
+                    self._create_auto_announcement(
+                        sch.institution_id,
+                        f"Payroll clock-in code for {course_code}",
+                        f"Class {sch.course_name} has started. Lecturer uses clock-in code {e.clock_in_code_plain}. "
+                        f"Clock-out for lecturer + student uses code {e.clock_out_code_plain}.",
+                    )
+            if sch.end_time == plus10_hm:
+                e2 = payroll_api.auto_generate_codes_for_schedule(
+                    self.db,
+                    institution_id=sch.institution_id,
+                    teacher_id=teacher.id,
+                    course_code=course_code,
+                    generated_by_user_id=0,
+                    regenerate_clockout_only=True,
+                )
+                if e2:
+                    self._create_auto_announcement(
+                        sch.institution_id,
+                        f"Updated clock-out code for {course_code}",
+                        f"10 minutes to class end for {sch.course_name}. Updated clock-out code is {e2.clock_out_code_plain}.",
+                    )
     
     def get_upcoming_classes(self, minutes_ahead: int = None) -> List[Schedule]:
         """

@@ -1,3 +1,4 @@
+import datetime
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from fastapi import UploadFile
@@ -10,7 +11,11 @@ from app.exceptions import NotFoundError, ConflictError, ValidationError
 from app.authentication.authenticator import hash_password
 from app.services.email_service import EmailService
 from app.helpers.async_helper import run_async_safe
-from app.helpers.user_roles import role_column_contains_role, user_has_role
+from app.helpers.user_roles import (
+    role_column_contains_role,
+    user_has_role,
+    parse_roles_to_list,
+)
 
 async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optional[UploadFile] = None):
     """Create a new tenant"""
@@ -43,6 +48,17 @@ async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optio
         database_url=tenant_database_url,
         is_active=tenant.is_active if tenant.is_active is not None else True
     )
+    
+    # Auto-set billing_type from subscription_plans table if subscription_plan is provided
+    if tenant.subscription_plan:
+        from app.models.subscription_plan import SubscriptionPlan
+        plan = db.query(SubscriptionPlan).filter(
+            SubscriptionPlan.name == tenant.subscription_plan.strip()
+        ).first()
+        if plan:
+            new_tenant.billing_type = plan.billing_period
+            new_tenant.subscription_plan = tenant.subscription_plan.strip()
+    
     db.add(new_tenant)
     db.commit()
     db.refresh(new_tenant)
@@ -329,10 +345,80 @@ def _add_logo_url(db: Session, tenant: Tenant) -> Tenant:
     return tenant
 
 
+def _add_institution_contact(db: Session, tenant: Tenant) -> Tenant:
+    """
+    Set tenant.email / tenant.phone for API responses (receipts, UI).
+    Prefer an active admin or super_admin; otherwise first active institution user.
+    """
+    try:
+        mode = get_database_mode()
+        mode_norm = str(mode or "shared").lower().strip()
+        is_shared = mode_norm not in (
+            "multi_tenant",
+            "multi-tenant",
+            "multitenant",
+            "isolated",
+        )
+
+        if is_shared:
+            users = (
+                db.query(User)
+                .filter(
+                    User.institution_id == tenant.id,
+                    User.deleted_at.is_(None),
+                    User.is_active == "active",
+                )
+                .order_by(User.id.asc())
+                .all()
+            )
+        else:
+            try:
+                TenantSessionLocal = get_tenant_db(tenant.name)
+                tenant_db = TenantSessionLocal()
+                try:
+                    users = (
+                        tenant_db.query(User)
+                        .filter(
+                            User.institution_id == tenant.id,
+                            User.deleted_at.is_(None),
+                            User.is_active == "active",
+                        )
+                        .order_by(User.id.asc())
+                        .all()
+                    )
+                finally:
+                    tenant_db.close()
+            except Exception:
+                users = []
+
+        def pick_email_phone(user_list: List[User]) -> tuple[Optional[str], Optional[str]]:
+            for u in user_list:
+                roles = parse_roles_to_list(u.role)
+                if "admin" in roles or "super_admin" in roles:
+                    em = (u.email or "").strip() or None
+                    ph = (u.phone or "").strip() or None
+                    return em, ph
+            if user_list:
+                u = user_list[0]
+                em = (u.email or "").strip() or None
+                ph = (u.phone or "").strip() or None
+                return em, ph
+            return None, None
+
+        em, ph = pick_email_phone(users)
+        setattr(tenant, "email", em)
+        setattr(tenant, "phone", ph)
+    except Exception:
+        setattr(tenant, "email", None)
+        setattr(tenant, "phone", None)
+    return tenant
+
+
 def _enrich_tenant(db: Session, tenant: Tenant) -> Tenant:
     """Helper function to enrich tenant with admin_username and logo_url"""
     print("OK LET US PROCEED..... Enrich tenant with admin_username and logo_url.")
     tenant = _add_admin_username(db, tenant)
+    tenant = _add_institution_contact(db, tenant)
     tenant = _add_logo_url(db, tenant)
     tenant = _add_branches_enabled(db, tenant)
     print("OK LET US PROCEED..... Enrichment complete. ", tenant.logo_url)
@@ -423,6 +509,9 @@ async def update_tenant(
         update_data['domain'] = tenant_update.domain
     if tenant_update.is_active is not None:
         update_data['is_active'] = tenant_update.is_active
+        if tenant_update.is_active:
+            update_data['suspension_reason'] = None
+            update_data['suspended_at'] = None
     if tenant_update.fee_amount is not None:
         update_data['fee_amount'] = tenant_update.fee_amount
     if tenant_update.fee_deadline is not None:
@@ -434,7 +523,36 @@ async def update_tenant(
                 update_data['fee_deadline'] = datetime.strptime(tenant_update.fee_deadline, '%Y-%m-%d')
             except ValueError:
                 raise ValidationError("Invalid fee_deadline format. Use YYYY-MM-DD or ISO format.")
-    
+    if tenant_update.subscription_plan is not None:
+        stripped = (tenant_update.subscription_plan or "").strip()
+        update_data["subscription_plan"] = stripped if stripped else None
+        # Auto-set billing_type from subscription_plans table
+        if stripped:
+            from app.models.subscription_plan import SubscriptionPlan
+            plan = db.query(SubscriptionPlan).filter(
+                SubscriptionPlan.name == stripped
+            ).first()
+            if plan:
+                update_data["billing_type"] = plan.billing_period
+    if tenant_update.subscription_started_at is not None:
+        from datetime import datetime
+
+        raw = (tenant_update.subscription_started_at or "").strip()
+        if not raw:
+            update_data["subscription_started_at"] = None
+        else:
+            try:
+                update_data["subscription_started_at"] = datetime.fromisoformat(
+                    raw.replace("Z", "+00:00")
+                )
+            except ValueError:
+                try:
+                    update_data["subscription_started_at"] = datetime.strptime(raw, "%Y-%m-%d")
+                except ValueError:
+                    raise ValidationError(
+                        "Invalid subscription_started_at format. Use YYYY-MM-DD or ISO format."
+                    )
+
     # Update tenant fields - only update fields that are explicitly provided (not None)
     if update_data:
         for field, value in update_data.items():
@@ -665,6 +783,35 @@ async def _upload_tenant_logo_safe(
     finally:
         if should_close_settings:
             settings_db.close()
+
+def suspend_tenant(db: Session, tenant_id: int, reason: str) -> Tenant:
+    """Mark tenant inactive and record suspension reason (blocks login via get_tenant)."""
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise NotFoundError(f"Tenant with ID {tenant_id} not found")
+    r = (reason or "").strip()
+    if not r:
+        raise ValidationError("Suspension reason is required.")
+    tenant.is_active = False
+    tenant.suspension_reason = r[:4000]
+    tenant.suspended_at = datetime.datetime.utcnow()
+    db.commit()
+    db.refresh(tenant)
+    return _enrich_tenant(db, tenant)
+
+
+def resume_tenant(db: Session, tenant_id: int) -> Tenant:
+    """Re-activate tenant and clear suspension metadata."""
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise NotFoundError(f"Tenant with ID {tenant_id} not found")
+    tenant.is_active = True
+    tenant.suspension_reason = None
+    tenant.suspended_at = None
+    db.commit()
+    db.refresh(tenant)
+    return _enrich_tenant(db, tenant)
+
 
 def delete_tenant(db: Session, tenant_id: int) -> bool:
     """Delete a tenant"""

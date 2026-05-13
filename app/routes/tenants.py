@@ -3,10 +3,11 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import json
 from app.dependencies.tenantDependency import get_db
-from app.schemas.tenant import TenantRequest, TenantResponse, TenantUpdate
+from app.schemas.tenant import TenantRequest, TenantResponse, TenantUpdate, TenantSuspendRequest
 from app.apis.tenant import (
     create_new_tenant, get_tenant_by_name, get_tenant_by_id,
-    get_all_tenants, update_tenant, delete_tenant
+    get_all_tenants, update_tenant, delete_tenant,
+    suspend_tenant, resume_tenant,
 )
 from app.database.base import get_db_session
 from app.dependencies.auth import get_current_user, get_current_user_tenant
@@ -351,6 +352,10 @@ async def update_tenant_endpoint(
             must_change_password = form_data.get("must_change_password")
             branches_enabled = form_data.get("branches_enabled")
             initial_branch_name = form_data.get("initial_branch_name")
+            fee_amount = form_data.get("fee_amount")
+            fee_deadline = form_data.get("fee_deadline")
+            subscription_plan = form_data.get("subscription_plan")
+            subscription_started_at = form_data.get("subscription_started_at")
             # Get logo file if provided
             logo_file = None
             if "logo" in form_data:
@@ -383,7 +388,28 @@ async def update_tenant_endpoint(
                         branches_enabled_bool = branches_enabled.lower() in ('true', '1', 'yes', 'on')
                 else:
                     branches_enabled_bool = bool(branches_enabled)
-            
+
+            fee_amount_parsed = None
+            if fee_amount is not None and str(fee_amount).strip() != "":
+                try:
+                    fee_amount_parsed = float(fee_amount)
+                except (TypeError, ValueError):
+                    fee_amount_parsed = None
+
+            fee_deadline_str = (
+                str(fee_deadline).strip() if fee_deadline and str(fee_deadline).strip() else None
+            )
+            subscription_plan_str = (
+                str(subscription_plan).strip()
+                if subscription_plan and str(subscription_plan).strip()
+                else None
+            )
+            subscription_started_str = (
+                str(subscription_started_at).strip()
+                if subscription_started_at and str(subscription_started_at).strip()
+                else None
+            )
+
             # Only set fields that are not None and not empty strings
             tenant_update = TenantUpdate(
                 name=name if name and str(name).strip() else None,
@@ -394,7 +420,11 @@ async def update_tenant_endpoint(
                 initial_branch_name=initial_branch_name if initial_branch_name and str(initial_branch_name).strip() else None,
                 admin_username=admin_username if admin_username and str(admin_username).strip() else None,
                 admin_password=admin_password if admin_password and str(admin_password).strip() else None,
-                must_change_password=must_change_password_bool
+                must_change_password=must_change_password_bool,
+                fee_amount=fee_amount_parsed,
+                fee_deadline=fee_deadline_str,
+                subscription_plan=subscription_plan_str,
+                subscription_started_at=subscription_started_str,
             )
            
         except Exception as e:
@@ -434,6 +464,30 @@ async def update_tenant_endpoint(
     )
     
     return updated_tenant
+
+
+@tenant.post("/tenants/{tenant_id}/suspend", response_model=TenantResponse)
+async def suspend_tenant_route(
+    tenant_id: int,
+    body: TenantSuspendRequest,
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Suspend tenant (inactive + reason). System admin only."""
+    check_system_admin(current_user)
+    return suspend_tenant(db=db, tenant_id=tenant_id, reason=body.reason)
+
+
+@tenant.post("/tenants/{tenant_id}/resume", response_model=TenantResponse)
+async def resume_tenant_route(
+    tenant_id: int,
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Re-activate a suspended tenant. System admin only."""
+    check_system_admin(current_user)
+    return resume_tenant(db=db, tenant_id=tenant_id)
+
 
 @tenant.delete("/tenants/{tenant_id}", status_code=204)
 async def delete_tenant_endpoint(

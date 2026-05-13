@@ -8,6 +8,7 @@ from app.helpers.pagination import paginate_query
 from app.helpers.activity_logger import log_create_activity, log_update_activity, log_delete_activity, get_user_display_name
 from app.services.email_service import EmailService
 from app.helpers.async_helper import run_async_safe
+from app.apis.tenant_settings import allocate_next_lecturer_employee_id
 
 
 def teacher_to_response(db: Session, teacher: Teacher) -> TeacherResponse:
@@ -34,6 +35,12 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
     if not institution_id:
         from app.exceptions import ValidationError
         raise ValidationError("institution_id is required. Either provide it in the request body or ensure the user belongs to an institution")
+
+    raw_employee_id = (teacher.employee_id or "").strip() if teacher.employee_id is not None else ""
+    if not raw_employee_id:
+        final_employee_id = allocate_next_lecturer_employee_id(db, institution_id)
+    else:
+        final_employee_id = raw_employee_id
     
     # Check if email already exists in teachers table
     existing_teacher = db.query(Teacher).filter(Teacher.email == teacher.email).first()
@@ -41,9 +48,9 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
         raise ConflictError(f"Teacher with email {teacher.email} already exists")
     
     # Check if employee_id already exists
-    existing_teacher = db.query(Teacher).filter(Teacher.employee_id == teacher.employee_id).first()
+    existing_teacher = db.query(Teacher).filter(Teacher.employee_id == final_employee_id).first()
     if existing_teacher:
-        raise ConflictError(f"Teacher with employee_id {teacher.employee_id} already exists")
+        raise ConflictError(f"Teacher with employee_id {final_employee_id} already exists")
     
     # Check if user with this email already exists
     existing_user = db.query(User).filter(User.email == teacher.email).first()
@@ -51,7 +58,12 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
         raise ConflictError(f"User with email {teacher.email} already exists. Please use a different email.")
     
     # Create teacher record (username lives on User, not Teacher)
-    teacher_dict = teacher.dict(exclude={'institution_id', 'designation', 'title', 'username'})
+    _exclude = {'institution_id', 'designation', 'title', 'username', 'employee_id'}
+    if hasattr(teacher, "model_dump"):
+        teacher_dict = teacher.model_dump(exclude=_exclude)
+    else:
+        teacher_dict = teacher.dict(exclude=_exclude)
+    teacher_dict['employee_id'] = final_employee_id
     teacher_dict['position'] = teacher.position or getattr(teacher, 'designation', None) or getattr(teacher, 'title', None)
     teacher_dict['institution_id'] = institution_id
     if 'branch_id' not in teacher_dict:
@@ -61,7 +73,7 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
     db.flush()  # Flush to get the teacher ID
     
     # Generate a default password (employee_id or email prefix)
-    default_password = teacher.employee_id or teacher.email.split('@')[0]
+    default_password = final_employee_id or teacher.email.split('@')[0]
     hashed_password = hash_password(default_password)
     
     # Login username: optional on request, else email local-part
@@ -123,7 +135,7 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
             lecturer_email=teacher.email,
             username=username,
             password=default_password,  # Send plain password for first login
-            employee_id=teacher.employee_id,
+            employee_id=final_employee_id,
             institution_name=institution_name
         )
     )
@@ -131,7 +143,7 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
     # Log activity if current_user is provided
     if current_user and institution_id:
         try:
-            teacher_name = f"{teacher.firstname} {teacher.lastname} ({teacher.employee_id})"
+            teacher_name = f"{teacher.firstname} {teacher.lastname} ({final_employee_id})"
             log_create_activity(
                 db=db,
                 current_user=current_user,
@@ -139,7 +151,7 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
                 entity_id=new_teacher.id,
                 entity_name=teacher_name,
                 institution_id=institution_id,
-                content=f"Created staff/teacher: {teacher_name} with staff user account (Employee ID: {teacher.employee_id})"
+                content=f"Created staff/teacher: {teacher_name} with staff user account (Employee ID: {final_employee_id})"
             )
         except Exception as e:
             print(f"Error logging teacher creation activity: {e}")
@@ -184,7 +196,11 @@ def update_teacher(db: Session, teacher_id: int, teacher_update: TeacherUpdate, 
     """Update a teacher"""
     teacher = get_teacher(db, teacher_id)
     
-    update_data = teacher_update.dict(exclude_unset=True)
+    dump = getattr(teacher_update, "model_dump", None)
+    if callable(dump):
+        update_data = dump(exclude_unset=True)
+    else:
+        update_data = teacher_update.dict(exclude_unset=True)
     new_username = update_data.pop("username", None)
 
     # Normalize position aliases used by frontend payloads.

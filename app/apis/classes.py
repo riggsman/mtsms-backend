@@ -291,7 +291,16 @@ def check_classes_configured(db: Session, institution_id: int) -> bool:
         Class.is_custom == True,
         Class.deleted_at.is_(None)
     ).count()
-    return count > 0
+    if count > 0:
+        return count
+    elif count == 0:
+        count = db.query(Class).filter(
+        Class.institution_id == 0,
+        Class.is_custom == False,
+        Class.deleted_at.is_(None)
+    ).count()
+        return count > 0
+    
 
 def delete_class(db: Session, class_id: int, current_user: Optional[User] = None) -> bool:
     """Soft delete a class"""

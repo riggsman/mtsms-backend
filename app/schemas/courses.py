@@ -1,7 +1,7 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, List
 from decimal import Decimal
-from datetime import datetime
+from datetime import date, datetime
 
 class CourseRequest(BaseModel):
     name: str
@@ -9,7 +9,11 @@ class CourseRequest(BaseModel):
     description: Optional[str] = None
     department_id: int
     level_id: Optional[int] = None
-    credits: Optional[Decimal] = None
+    instructor_id: Optional[int] = None
+    # 1 = first semester, 2 = second semester (matches admin UI)
+    semester: Optional[int] = Field(None, ge=1, le=2)
+    start_date: Optional[date] = None
+    expected_end_date: Optional[date] = None
     institution_id: Optional[int] = None
 
 class CourseResponse(BaseModel):
@@ -21,7 +25,11 @@ class CourseResponse(BaseModel):
     department_id: int
     department_name: Optional[str] = None  # Department name from departments table
     level_id: Optional[int]
+    instructor_id: Optional[int] = None
     credits: Optional[Decimal]
+    semester: Optional[int] = None
+    start_date: Optional[date] = None
+    expected_end_date: Optional[date] = None
     created_at: datetime
     updated_at: Optional[datetime]
 
@@ -34,4 +42,38 @@ class CourseUpdate(BaseModel):
     description: Optional[str] = None
     department_id: Optional[int] = None
     level_id: Optional[int] = None
+    instructor_id: Optional[int] = None
     credits: Optional[Decimal] = None
+    semester: Optional[int] = Field(None, ge=1, le=2)
+    start_date: Optional[date] = None
+    expected_end_date: Optional[date] = None
+
+class CourseSchedulePerformanceItem(BaseModel):
+    id: int
+    day: str
+    start_time: str
+    end_time: str
+    room: Optional[str] = None
+    instructor: Optional[str] = None
+    hours: Decimal
+
+class CoursePerformanceResponse(BaseModel):
+    id: int
+    institution_id: int
+    code: str
+    name: str
+    department_id: int
+    department_name: Optional[str] = None
+    semester: Optional[int] = None
+    start_date: Optional[date] = None
+    expected_end_date: Optional[date] = None
+    instructors: List[str] = Field(default_factory=list)
+    expected_teaching_hours: Decimal
+    elapsed_scheduled_hours: Decimal
+    progress_percentage: Decimal
+    registered_students: int
+    exam_written_students: int
+    passed_students: int
+    pass_rate_percentage: Decimal
+    exam_participation_percentage: Decimal
+    schedules: List[CourseSchedulePerformanceItem] = Field(default_factory=list)

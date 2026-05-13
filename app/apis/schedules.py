@@ -1,9 +1,12 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional, Dict, Any
 from app.models.schedule import Schedule
 from app.models.user import User
 from app.models.course import Course
 from app.models.teacher import Teacher
+from app.models.payroll_time_entry import PayrollTimeEntry
+from app.models.tenant_settings import TenantSettings
 from app.schemas.schedules import ScheduleRequest, ScheduleUpdate, ScheduleResponse, CourseInfo, InstructorInfo
 from app.exceptions import NotFoundError
 from app.helpers.pagination import paginate_query
@@ -52,20 +55,26 @@ def _enrich_schedule_data(db: Session, schedule: Schedule) -> Dict[str, Any]:
     course_info = None
     instructor_info = None
     
-    # Look up course by name
+    # Resolve course for this row (exact name, case-insensitive name, or course code)
     if schedule.course_name:
-        course = db.query(Course).filter(
-            Course.name == schedule.course_name,
-            Course.institution_id == schedule.institution_id,
-            Course.deleted_at.is_(None)
-        ).first()
-        if course:
-            course_info = CourseInfo(
-                id=course.id,
-                name=course.name,
-                code=course.code,
-                description=course.description
+        raw = (schedule.course_name or "").strip()
+        if raw:
+            base = db.query(Course).filter(
+                Course.institution_id == schedule.institution_id,
+                Course.deleted_at.is_(None),
             )
+            course = base.filter(Course.name == raw).first()
+            if not course:
+                course = base.filter(func.lower(Course.name) == func.lower(raw)).first()
+            if not course:
+                course = base.filter(func.lower(Course.code) == func.lower(raw)).first()
+            if course:
+                course_info = CourseInfo(
+                    id=course.id,
+                    name=course.name,
+                    code=course.code,
+                    description=course.description
+                )
     
     # Look up instructor/teacher by name or email
     if schedule.instructor:
@@ -107,9 +116,26 @@ def _enrich_schedule_data(db: Session, schedule: Schedule) -> Dict[str, Any]:
                 employee_id=teacher.employee_id
             )
     
+    payroll_in_code = None
+    payroll_out_code = None
+    settings = db.query(TenantSettings).filter(TenantSettings.institution_id == schedule.institution_id).first()
+    if settings and settings.payroll_auto_generate_codes:
+        course_code = course_info.code if course_info and course_info.code else None
+        if course_code:
+            pe = db.query(PayrollTimeEntry).filter(
+                PayrollTimeEntry.institution_id == schedule.institution_id,
+                PayrollTimeEntry.course_code_snapshot == course_code,
+                PayrollTimeEntry.deleted_at.is_(None),
+            ).order_by(PayrollTimeEntry.created_at.desc()).first()
+            if pe:
+                payroll_in_code = pe.clock_in_code_plain
+                payroll_out_code = pe.clock_out_code_plain
+
     return {
         "course_info": course_info,
-        "instructor_info": instructor_info
+        "instructor_info": instructor_info,
+        "payroll_clock_in_code": payroll_in_code,
+        "payroll_clock_out_code": payroll_out_code,
     }
 
 def get_schedule(db: Session, schedule_id: int) -> Schedule:
@@ -142,7 +168,9 @@ def get_schedule_with_enriched_data(db: Session, schedule_id: int) -> ScheduleRe
         created_at=schedule.created_at,
         updated_at=schedule.updated_at,
         course_info=enriched_data.get("course_info"),
-        instructor_info=enriched_data.get("instructor_info")
+        instructor_info=enriched_data.get("instructor_info"),
+        payroll_clock_in_code=enriched_data.get("payroll_clock_in_code"),
+        payroll_clock_out_code=enriched_data.get("payroll_clock_out_code"),
     )
 
 def get_schedules(
@@ -210,7 +238,9 @@ def get_schedules_with_enriched_data(
             created_at=schedule.created_at,
             updated_at=schedule.updated_at,
             course_info=enriched_data.get("course_info"),
-            instructor_info=enriched_data.get("instructor_info")
+            instructor_info=enriched_data.get("instructor_info"),
+            payroll_clock_in_code=enriched_data.get("payroll_clock_in_code"),
+            payroll_clock_out_code=enriched_data.get("payroll_clock_out_code"),
         )
         enriched_schedules.append(schedule_response)
     

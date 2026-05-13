@@ -1,4 +1,5 @@
-from typing import List
+from os import path
+from typing import List, Optional
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 import os
@@ -36,13 +37,30 @@ class Settings(BaseSettings):
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True").lower() == "true"
     EMAIL_ENABLED: bool = os.getenv("EMAIL_ENABLED", "False").lower() == "true"
 
-    # System admin notification emails (fallback if not configured in DB)
-    # Comma-separated list in .env, e.g. "admin1@example.com,admin2@example.com"
-    SYSTEM_ADMIN_NOTIFICATION_EMAILS: str = os.getenv("SYSTEM_ADMIN_NOTIFICATION_EMAILS", "")
+    # Logging
+    LOG_FILE: str = path.join(path.dirname(path.dirname(__file__)), "helpers", "logs", "app.log")
+
+    # Firebase Admin (FCM server-side). Use path to service account JSON, or raw JSON for containers.
+    FIREBASE_SERVICE_ACCOUNT_PATH: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "")
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    # Firebase Messaging (optional - for .env fallback)
+    FIREBASE_MESSAGING_ENABLED: Optional[bool] = None
+    FIREBASE_API_KEY: Optional[str] = None
+    FIREBASE_AUTH_DOMAIN: Optional[str] = None
+    FIREBASE_PROJECT_ID: Optional[str] = None
+    FIREBASE_MESSAGING_SENDER_ID: Optional[str] = None
+    FIREBASE_APP_ID: Optional[str] = None
+    FIREBASE_VAPID_KEY: Optional[str] = None
+    
+    # Emails
+    SYSTEM_ADMIN_NOTIFICATION_EMAILS: Optional[str] = ""
+    
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": True,
+        "extra": "ignore",
+    }
     
     @property
     def cors_origins_list(self) -> List[str]:

@@ -10,6 +10,25 @@ from alembic import context
 # Add the parent directory to the path so we can import app modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Stub fastapi for alembic to work
+try:
+    from app.database.base import DefaultBase, engine
+except ImportError:
+    # Create minimal stub for alembic
+    from sqlalchemy import create_engine
+    engine = create_engine(os.getenv('DATABASE_URL', 'mysql+pymysql://root@localhost:3306/mtsms'))
+    class DefaultBase:
+        metadata = None
+    BaseModel_Base = DefaultBase
+    class settings:
+        pass
+    
+    # Skip full imports, just set up basic alembic
+    class FakeContext:
+        config = None
+        pipeline = None
+    context = FakeContext
+
 # Import database bases and all models
 from app.database.base import DefaultBase, engine
 from app.database.sessionManager import BaseModel_Base

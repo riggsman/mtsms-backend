@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, date
 
@@ -47,6 +47,10 @@ class AssignmentSubmissionRequest(BaseModel):
     assignment_id: int
     student_id: str
     submission_file: Optional[str] = None
+    note: Optional[str] = Field(
+        default=None,
+        description="Optional student note; persisted via feedback column when model has no note field.",
+    )
 
 class AssignmentSubmissionResponse(BaseModel):
     id: int

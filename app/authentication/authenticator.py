@@ -14,13 +14,6 @@ from app.database.base import get_db_session
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 
 
-class User:
-    def __init__(self, id: int, username: str, hashed_password: str):
-        self.id = id
-        self.username = username
-        self.hashed_password = hashed_password
-
-
 # Function to hash passwords
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -67,12 +60,78 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         print(f"Hash format: {hashed_password[:50] if hashed_password else 'None'}...")
         return False
 
+
+def _get_effective_access_token_expire_minutes():
+    """
+    Get effective access token expiration minutes from database, 
+    falling back to environment variable.
+    """
+    # First check env variable
+    import os
+    env_val = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")
+    if env_val:
+        print(f"[Authenticator] Using env ACCESS_TOKEN_EXPIRE_MINUTES: {env_val}")
+        return int(env_val)
+    
+    try:
+        from app.database.base import get_db_session
+        from app.models.system_settings import SystemSettings
+        
+        db = next(get_db_session())
+        try:
+            settings = db.query(SystemSettings).order_by(SystemSettings.id.asc()).first()
+            if settings and settings.access_token_expire_minutes is not None:
+                print(f"[Authenticator] Using database access_token_expire_minutes: {settings.access_token_expire_minutes}")
+                return settings.access_token_expire_minutes
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[Authenticator] Error fetching access token expire minutes from DB: {e}")
+    
+    print(f"[Authenticator] Using config default ACCESS_TOKEN_EXPIRE_MINUTES: {settings.ACCESS_TOKEN_EXPIRE_MINUTES}")
+    return settings.ACCESS_TOKEN_EXPIRE_MINUTES
+
+
+def _get_effective_refresh_token_expire_days():
+    """
+    Get effective refresh token expiration days from database,
+    falling back to environment variable.
+    """
+    # First check env variable
+    import os
+    env_val = os.getenv("REFRESH_TOKEN_EXPIRE_DAYS")
+    if env_val:
+        print(f"[Authenticator] Using env REFRESH_TOKEN_EXPIRE_DAYS: {env_val}")
+        return int(env_val)
+    
+    try:
+        from app.database.base import get_db_session
+        from app.models.system_settings import SystemSettings
+        
+        db = next(get_db_session())
+        try:
+            settings = db.query(SystemSettings).order_by(SystemSettings.id.asc()).first()
+            if settings and settings.refresh_token_expire_days is not None:
+                print(f"[Authenticator] Using database refresh_token_expire_days: {settings.refresh_token_expire_days}")
+                return settings.refresh_token_expire_days
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[Authenticator] Error fetching refresh token expire days from DB: {e}")
+    
+    print(f"[Authenticator] Using config default REFRESH_TOKEN_EXPIRE_DAYS: {settings.REFRESH_TOKEN_EXPIRE_DAYS}")
+    return settings.REFRESH_TOKEN_EXPIRE_DAYS
+
+
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
 
-    # Ensure expiration is correctly set
-    expire = datetime.now(timezone.utc) + (expires_delta if expires_delta else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    # Get effective expiration from database or environment
+    expire_minutes = _get_effective_access_token_expire_minutes()
+    print(f"[Authenticator] Creating access token with expiry: {expire_minutes} minutes")
+    expire = datetime.now(timezone.utc) + (expires_delta if expires_delta else timedelta(minutes=expire_minutes))
     to_encode.update({"exp": expire.timestamp()})  # Convert to Unix timestamp
+    print(f"[Authenticator] Token exp timestamp: {expire.timestamp()} (local: {expire})")
 
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
@@ -144,8 +203,10 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
 def create_refresh_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
     
-    # Ensure expiration is correctly set
-    expire = datetime.now(timezone.utc) + (expires_delta if expires_delta else timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS))
+    # Get effective expiration from database or environment
+    expire_days = _get_effective_refresh_token_expire_days()
+    print(f"[Authenticator] Creating refresh token with expiry: {expire_days} days")
+    expire = datetime.now(timezone.utc) + (expires_delta if expires_delta else timedelta(days=expire_days))
     to_encode.update({"exp": expire.timestamp()})  # Convert to Unix timestamp
 
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)

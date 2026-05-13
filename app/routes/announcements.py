@@ -43,7 +43,8 @@ def list_announcements(
         institution_id=current_user.institution_id,
         skip=skip,
         limit=page_size,
-        user_role=user_role
+        user_role=user_role,
+        viewer_user_id=current_user.id,
     )
     return PaginatedResponse.create(
         items=announcements,
@@ -72,7 +73,7 @@ def get_announcement_endpoint(
 def create_announcement_endpoint(
     announcement_data: AnnouncementCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SECRETARY))
+    current_user: User = Depends(require_any_role(UserRole.STAFF,UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SECRETARY))
 ):
     """Create a new announcement (admin/secretary only)"""
     if not current_user.institution_id:
@@ -94,7 +95,7 @@ def update_announcement_endpoint(
     announcement_id: int,
     announcement_update: AnnouncementUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SECRETARY))
+    current_user: User = Depends(require_any_role(UserRole.STAFF,UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SECRETARY))
 ):
     """Update an announcement (admin/secretary only)"""
     if not current_user.institution_id:

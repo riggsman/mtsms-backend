@@ -44,15 +44,34 @@ def get_current_user(
             detail="Authorization header missing"
         )
     
+    # Normalize header - strip whitespace and handle various formats
+    authorization = authorization.strip()
+    
     try:
-        # Extract token from "Bearer <token>"
-        scheme, token = authorization.split()
+        # Extract token from "Bearer <token>" (case-insensitive scheme)
+        parts = authorization.split()
+        if len(parts) != 2:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authorization header format"
+            )
+        
+        scheme, token = parts
         if scheme.lower() != "bearer":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication scheme"
             )
-    except ValueError:
+        
+        if not token or not token.strip():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token is empty"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authorization header format"
@@ -77,6 +96,8 @@ def get_current_user(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Token expired and user is not active"
                     )
+            except HTTPException:
+                raise
             except Exception:
                 pass  # If we can't decode, just raise the original error
         

@@ -1,5 +1,7 @@
-from pydantic import BaseModel
-from typing import Optional, List
+import json
+
+from pydantic import BaseModel, field_validator
+from typing import Optional, List, Any
 from datetime import datetime
 
 class ComplaintRequest(BaseModel):
@@ -17,15 +19,31 @@ class ComplaintResponse(BaseModel):
     caption: str
     contents: str
     is_anonymous: bool
-    screenshots: Optional[List[str]]
+    screenshots: Optional[List[str]] = None
     status: str
-    update_note:str
+    update_note: Optional[str] = None
     resolved_by: Optional[str]
     resolver_role: Optional[str]
     resolved_date: Optional[datetime]
     submission_date: datetime
     created_at: datetime
     updated_at: Optional[datetime]
+
+    @field_validator("screenshots", mode="before")
+    @classmethod
+    def coerce_screenshots(cls, v: Any) -> Optional[List[str]]:
+        """DB column is JSON text; ORM returns a string until explicitly parsed."""
+        if v is None or v == "":
+            return None
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            try:
+                data = json.loads(v)
+                return data if isinstance(data, list) else []
+            except (json.JSONDecodeError, TypeError):
+                return []
+        return None
 
     class Config:
         from_attributes = True

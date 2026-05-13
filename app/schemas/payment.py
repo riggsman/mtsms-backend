@@ -52,14 +52,21 @@ class PaymentResponse(BaseModel):
     updated_at: Optional[datetime]
     paid_at: Optional[datetime]
     date: Optional[str] = None  # For compatibility with frontend (formatted date)
-    
+    department_name: Optional[str] = None
+    specialization_name: Optional[str] = None
+
     # Frontend-compatible aliases (for camelCase)
     receiptNumber: Optional[str] = None
     paymentType: Optional[str] = None
     paymentMethod: Optional[str] = None
     
     @classmethod
-    def from_payment(cls, payment):
+    def from_payment(
+        cls,
+        payment,
+        department_name: Optional[str] = None,
+        specialization_name: Optional[str] = None,
+    ):
         """Create PaymentResponse from Payment model"""
         # Format date for frontend
         date_str = payment.created_at.strftime('%Y-%m-%d') if payment.created_at else None
@@ -88,10 +95,12 @@ class PaymentResponse(BaseModel):
             'updated_at': payment.updated_at,
             'paid_at': payment.paid_at,
             'date': date_str,
+            'department_name': department_name,
+            'specialization_name': specialization_name,
             # Frontend-compatible fields
             'receiptNumber': payment.receipt_number,
             'paymentType': payment.reason,  # reason maps to paymentType in frontend
-            'paymentMethod': payment_method
+            'paymentMethod': payment_method,
         }
         return cls(**data)
     
@@ -114,6 +123,13 @@ class PaymentVerifyResponse(BaseModel):
     receipt_number: str
     message: str
     payment: PaymentResponse
+
+
+class PaymentPublicVerificationResponse(BaseModel):
+    """Public receipt-style payload (no auth). Scoped by institution_id + transaction_id."""
+
+    payment: PaymentResponse
+    institution_name: Optional[str] = None
 
 
 class PaymentListResponse(BaseModel):

@@ -1,9 +1,7 @@
-"""
-Comprehensive tests for API endpoints - Basic availability tests
-"""
+"""Legacy permissive suite replaced by strict ordered integration/UAT modules."""
 import pytest
-import time
-from fastapi.testclient import TestClient
+
+pytestmark = pytest.mark.skip(reason="Replaced by strict ordered suites test_00..test_10.")
 
 
 class TestAuthEndpoints:
