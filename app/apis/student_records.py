@@ -85,6 +85,7 @@ def create_student_record(db: Session, record: StudentRecordRequest, current_use
         institution_id=institution_id,
         student_id=record.student_id,
         course_code=record.course_code,
+        academic_year=record.academic_year or _resolve_academic_year_label(db, institution_id),
         semester=record.semester,
         assignment=assignment,
         ca=ca,

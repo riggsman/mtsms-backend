@@ -316,6 +316,9 @@ async def serve_uploaded_file(
         '.gif': 'image/gif',
         '.svg': 'image/svg+xml',
         '.webp': 'image/webp',
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     }
     
     content_type = content_types.get(file_ext, 'application/octet-stream')

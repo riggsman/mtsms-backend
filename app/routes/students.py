@@ -2,10 +2,12 @@ from fastapi import APIRouter, Depends, Header, Query, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.schemas.student import StudentRequest, StudentResponse, StudentUpdate
+from app.schemas.school import SchoolFeeResponse
 from app.apis.students import (
     create_student, get_student, get_students,
     update_student, delete_student, resolve_student_for_logged_in_user,
 )
+from app.apis.school import get_school_fee_by_level
 from app.dependencies.tenantDependency import get_db
 from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.dependencies.institutionDependency import get_institution_id_from_header
@@ -19,6 +21,46 @@ student = APIRouter()
 
 # IMPORTANT: More specific routes must be defined BEFORE parameterized routes
 # This ensures FastAPI matches /students/me before /students/{student_id}
+
+@student.get("/students/me/program-fee", response_model=SchoolFeeResponse)
+def get_current_student_program_fee(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant)
+):
+    """Get configured program fee for the current logged-in student"""
+    if not user_has_role(current_user, "student"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint is only available for students"
+        )
+
+    if not current_user.institution_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must belong to an institution"
+        )
+
+    student = resolve_student_for_logged_in_user(db, current_user)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student record not found for current user"
+        )
+
+    if not student.school_id or not student.level:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Student must have school and level assigned to retrieve program fee"
+        )
+
+    fee = get_school_fee_by_level(db, student.school_id, student.level, current_user.institution_id)
+    if not fee:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Program fee not configured for your school and level"
+        )
+
+    return SchoolFeeResponse.from_model(fee)
 
 @student.get("/students/me", response_model=StudentResponse)
 def get_current_student(

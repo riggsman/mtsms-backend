@@ -3,15 +3,17 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user_tenant
 from app.dependencies.auth import require_any_role
 from app.dependencies.tenantDependency import get_db
+from app.apis.students import resolve_student_for_logged_in_user
 from app.models.announcement import Announcement
 from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.course import Course
+from app.models.enrollment import Enrollment
 from app.models.note import Note
 from app.models.schedule import Schedule
 from app.models.student import Student
@@ -35,18 +37,7 @@ router = APIRouter(prefix="/student-dashboard", tags=["student-dashboard"])
 
 
 def _resolve_student(db: Session, current_user: User) -> Optional[Student]:
-    if not current_user or not current_user.institution_id:
-        return None
-    student = (
-        db.query(Student)
-        .filter(
-            Student.institution_id == current_user.institution_id,
-            Student.deleted_at.is_(None),
-            Student.email == current_user.email,
-        )
-        .first()
-    )
-    return student
+    return resolve_student_for_logged_in_user(db, current_user)
 
 
 def _grade_to_points(letter_grade: Optional[str]) -> float:
@@ -314,6 +305,121 @@ def get_student_academic_history(
         for r in records
     ]
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/grades")
+def get_student_grades(
+    course_code: Optional[str] = Query(None),
+    semester: Optional[str] = Query(None),
+    academic_year: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    student = _resolve_student(db, current_user)
+    if not student:
+        return {
+            "items": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size,
+            "summary": {"gpa": 0.0, "average_score": 0.0, "record_count": 0},
+        }
+
+    enrolled_courses = (
+        db.query(Course)
+        .join(
+            Enrollment,
+            (Enrollment.course_id == Course.id)
+            & (Enrollment.institution_id == student.institution_id)
+            & (Enrollment.student_id == student.id)
+            & (Enrollment.deleted_at.is_(None))
+            & (Enrollment.status.in_(["active", "completed"])),
+        )
+        .filter(
+            Course.institution_id == student.institution_id,
+            Course.deleted_at.is_(None),
+        )
+        .all()
+    )
+    course_by_code = {course.code: course for course in enrolled_courses if course.code}
+    enrolled_course_codes = list(course_by_code.keys())
+
+    current_year = (
+        db.query(AcademicYear)
+        .filter(
+            AcademicYear.institution_id == student.institution_id,
+            AcademicYear.deleted_at.is_(None),
+            AcademicYear.is_current.is_(True),
+        )
+        .order_by(AcademicYear.updated_at.desc(), AcademicYear.id.desc())
+        .first()
+    )
+    if not current_year:
+        current_year = (
+            db.query(AcademicYear)
+            .filter(
+                AcademicYear.institution_id == student.institution_id,
+                AcademicYear.deleted_at.is_(None),
+            )
+            .order_by(AcademicYear.updated_at.desc(), AcademicYear.id.desc())
+            .first()
+        )
+    current_academic_year = current_year.name if current_year and current_year.name else None
+
+    query = db.query(StudentRecord).filter(
+        StudentRecord.institution_id == student.institution_id,
+        StudentRecord.student_id == student.student_id,
+        StudentRecord.deleted_at.is_(None),
+    )
+    if enrolled_course_codes:
+        query = query.filter(StudentRecord.course_code.in_(enrolled_course_codes))
+    if course_code:
+        query = query.filter(StudentRecord.course_code == course_code)
+    if semester:
+        query = query.filter(StudentRecord.semester == semester)
+    if academic_year:
+        if current_academic_year and academic_year == current_academic_year:
+            query = query.filter(or_(StudentRecord.academic_year == academic_year, StudentRecord.academic_year.is_(None)))
+        else:
+            query = query.filter(StudentRecord.academic_year == academic_year)
+
+    total = query.count()
+    summary_records = query.all()
+    record_count = len(summary_records)
+    average_score = round(sum(_safe_float(r.total_score) for r in summary_records) / record_count, 2) if record_count else 0.0
+    gpa = round(sum(_safe_float(r.gpa) for r in summary_records) / record_count, 2) if record_count else 0.0
+
+    records = (
+        query.order_by(StudentRecord.created_at.desc(), StudentRecord.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "course_code": r.course_code,
+                "course_name": course_by_code.get(r.course_code).name if course_by_code.get(r.course_code) else r.course_code,
+                "academic_year": r.academic_year or current_academic_year,
+                "semester": r.semester,
+                "assignment": _safe_float(r.assignment),
+                "ca": _safe_float(r.ca),
+                "exam": _safe_float(r.exam),
+                "total_score": _safe_float(r.total_score),
+                "letter_grade": r.letter_grade,
+                "gpa": _safe_float(r.gpa),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in records
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "summary": {"gpa": gpa, "average_score": average_score, "record_count": record_count},
+    }
 
 
 @router.get("/analytics")
@@ -680,14 +786,38 @@ def get_student_dashboard_academic_years(
 ):
     student = _resolve_student(db, current_user)
     if not student:
-        return []
+        institution_id = current_user.institution_id if current_user else None
+        if not institution_id:
+            return []
+    else:
+        institution_id = student.institution_id
+
     years = (
         db.query(AcademicYear)
         .filter(
-            AcademicYear.institution_id == student.institution_id,
+            AcademicYear.institution_id == institution_id,
             AcademicYear.deleted_at.is_(None),
         )
         .order_by(AcademicYear.name.asc())
         .all()
     )
-    return [{"id": y.id, "name": y.name} for y in years]
+    options = {str(y.name): {"id": y.id, "name": y.name} for y in years if y.name}
+
+    if student:
+        record_years = (
+            db.query(StudentRecord.academic_year)
+            .filter(
+                StudentRecord.institution_id == student.institution_id,
+                StudentRecord.student_id == student.student_id,
+                StudentRecord.deleted_at.is_(None),
+                StudentRecord.academic_year.isnot(None),
+            )
+            .distinct()
+            .order_by(StudentRecord.academic_year.asc())
+            .all()
+        )
+        for row in record_years:
+            if row.academic_year and str(row.academic_year) not in options:
+                options[str(row.academic_year)] = {"id": str(row.academic_year), "name": str(row.academic_year)}
+
+    return list(options.values())

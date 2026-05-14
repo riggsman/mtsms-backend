@@ -7,7 +7,9 @@ class StaffDocumentBase(BaseModel):
     document_type: str
     file_name: str
     file_path: str
+    issue_date: Optional[datetime] = None
     expiry_date: Optional[datetime] = None
+    document_side: Optional[str] = None
     notes: Optional[str] = None
 
 class StaffDocumentCreate(StaffDocumentBase):

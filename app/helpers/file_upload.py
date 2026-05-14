@@ -50,12 +50,24 @@ ALLOWED_COMPLAINT_FILE_TYPES = {
     'image/webp'
 }
 
+ALLOWED_DOCUMENT_FILE_TYPES = {
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'image/webp'
+}
+
 # Maximum file sizes (in bytes)
 MAX_LOGO_SIZE = 5 * 1024 * 1024  # 5MB
 MAX_PROFILE_PICTURE_SIZE = 5 * 1024 * 1024  # 5MB
 MAX_NOTE_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 MAX_ASSIGNMENT_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 MAX_COMPLAINT_FILE_SIZE = 5 * 1024 * 1024  # 5MB per screenshot
+MAX_DOCUMENT_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 def sanitize_domain(domain: str) -> str:
@@ -207,6 +219,9 @@ async def save_uploaded_file(
     elif file_category == 'complaints' or file_category == 'screenshots':
         validate_file_type(file, ALLOWED_COMPLAINT_FILE_TYPES)
         validate_file_size(file, MAX_COMPLAINT_FILE_SIZE)
+    elif file_category == 'documents':
+        validate_file_type(file, ALLOWED_DOCUMENT_FILE_TYPES)
+        validate_file_size(file, MAX_DOCUMENT_FILE_SIZE)
     else:
         # Default validation for other file types
         validate_file_type(file, ALLOWED_IMAGE_TYPES)

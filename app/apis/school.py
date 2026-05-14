@@ -88,15 +88,16 @@ def delete_school(db: Session, school_id: int, institution_id: int) -> bool:
 VALID_LEVELS = ["HND", "DEGREE", "MASTERS"]
 
 
-def get_school_fees(db: Session, school_id: int, institution_id: int) -> List[SchoolFee]:
-    """Get all fees for a school"""
+def get_school_fees(db: Session, school_id: int, institution_id: int, level: str = None) -> List[SchoolFee]:
+    """Get fees for a school, optionally filtered by fee level"""
     # Verify school access
     get_school_by_id(db, school_id, institution_id)
     
-    fees = db.query(SchoolFee).filter(
-        SchoolFee.school_id == school_id
-    ).order_by(SchoolFee.level).all()
+    query = db.query(SchoolFee).filter(SchoolFee.school_id == school_id)
+    if level:
+        query = query.filter(SchoolFee.level == level.upper().strip())
     
+    fees = query.order_by(SchoolFee.level).all()
     return fees
 
 

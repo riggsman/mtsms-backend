@@ -6,6 +6,7 @@ from datetime import datetime
 class StudentRecordRequest(BaseModel):
     student_id: str
     course_code: str
+    academic_year: Optional[str] = None
     semester: str
     assignment: Optional[Decimal] = None
     ca: Optional[Decimal] = None
@@ -15,6 +16,7 @@ class StudentRecordResponse(BaseModel):
     id: int
     student_id: str
     course_code: str
+    academic_year: Optional[str] = None
     semester: str
     assignment: Optional[Decimal]
     ca: Optional[Decimal]
@@ -31,6 +33,7 @@ class StudentRecordResponse(BaseModel):
 class StudentRecordUpdate(BaseModel):
     student_id: Optional[str] = None
     course_code: Optional[str] = None
+    academic_year: Optional[str] = None
     semester: Optional[str] = None
     assignment: Optional[Decimal] = None
     ca: Optional[Decimal] = None

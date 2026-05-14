@@ -1,7 +1,7 @@
 """
 School Routes - FastAPI endpoints for schools and school fees
 """
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -237,12 +237,13 @@ def delete_school_endpoint(
 @router.get("/schools/{school_id}/fees", response_model=List[SchoolFeeResponse])
 def list_school_fees(
     school_id: int,
+    level: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
-    """Get all fees for a school"""
+    """Get fees for a school, optionally filtered by level"""
     institution_id = require_institution(current_user)
-    fees = get_school_fees(db, school_id, institution_id)
+    fees = get_school_fees(db, school_id, institution_id, level)
     return [SchoolFeeResponse.from_model(f) for f in fees]
 
 

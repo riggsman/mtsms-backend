@@ -13,7 +13,9 @@ def create_staff_document(db: Session, doc_data: StaffDocumentCreate, institutio
         document_type=doc_data.document_type,
         file_name=doc_data.file_name,
         file_path=doc_data.file_path,
+        issue_date=doc_data.issue_date,
         expiry_date=doc_data.expiry_date,
+        document_side=doc_data.document_side,
         notes=doc_data.notes
     )
     db.add(db_doc)

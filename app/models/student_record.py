@@ -8,6 +8,7 @@ class StudentRecord(BaseModel_Base):
     institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
     student_id = Column(String(70), nullable=False)
     course_code = Column(String(50), nullable=False)
+    academic_year = Column(String(50), nullable=True)
     semester = Column(String(100), nullable=False)
     assignment = Column(Numeric(5, 2), nullable=True, default=0)
     ca = Column(Numeric(5, 2), nullable=True, default=0)
