@@ -1,7 +1,7 @@
 """
 Student Payment Routes
 """
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
@@ -14,10 +14,33 @@ from app.schemas.student_payment import (
     StudentPaymentStatusResponse
 )
 from app.apis import student_payment as payment_api
-from app.authentication.authenticator import auth_guard,AuthUser
+from app.apis.students import resolve_student_for_logged_in_user
+from app.apis.school import get_academic_year_name
+from app.helpers.program_level import resolve_program_fee_level
+from app.authentication.authenticator import auth_guard, AuthUser
+from app.helpers.user_roles import user_has_role, user_has_any_role
+from app.exceptions import ForbiddenError, NotFoundError
 
 
 router = APIRouter()
+
+
+def _resolve_student_id(db: Session, current_user: AuthUser) -> int:
+    """Map logged-in user to students.id (not users.id)."""
+    student = resolve_student_for_logged_in_user(db, current_user.user)
+    if not student:
+        raise NotFoundError("Student record not found for current user")
+    return student.id
+
+
+def _is_student_only(current_user: AuthUser) -> bool:
+    """True when the user has student role but no elevated tenant admin roles."""
+    if not user_has_role(current_user.user, "student"):
+        return False
+    return not user_has_any_role(
+        current_user.user,
+        ["admin", "super_admin", "secretary", "system_admin", "system_super_admin"],
+    )
 
 
 @router.get("/student-payments", response_model=List[StudentPaymentResponse])
@@ -34,8 +57,8 @@ def get_student_payments(
     institution_id = int(currentUser.institution_id)
     
     # If student user, only show their own payments
-    if currentUser.role == "student":
-        student_id = currentUser.user_id
+    if user_has_role(currentUser.user, "student"):
+        student_id = _resolve_student_id(db, currentUser)
     
     payments = payment_api.get_student_payments(db, institution_id, student_id, school_id)
     return [StudentPaymentResponse.from_model(p) for p in payments]
@@ -53,47 +76,30 @@ def get_payment_fee_preview(
     Used to show the fee before creating a payment record.
     """
     import logging
-    from app.models.fee_structure import FeeInstallment
-    
+    from app.apis.fee_structure import get_installments, get_installments_for_level
+    from app.helpers.program_level import normalize_program_fee_level
+
     logger = logging.getLogger(__name__)
     institution_id = int(currentUser.institution_id)
-    level_upper = level.upper()
-    
-    logger.info(f"[fee-preview] institution_id={institution_id}, school_id={school_id}, level={level_upper}")
-    
-    # Query fee installments filtered by tenant (institution), school, and level
-    installments = db.query(FeeInstallment).filter(
-        FeeInstallment.tenant_id == institution_id,
-        FeeInstallment.school_id == school_id,
-        FeeInstallment.level == level_upper,
-        FeeInstallment.is_active == True
-    ).all()
-    
-    logger.info(f"[fee-preview] Found {len(installments)} installments for level={level_upper}")
-    
-    # Debug: log all available levels for this school
-    all_installments = db.query(FeeInstallment).filter(
-        FeeInstallment.tenant_id == institution_id,
-        FeeInstallment.school_id == school_id,
-        FeeInstallment.is_active == True
-    ).all()
-    
-    available_levels = list(set([inst.level for inst in all_installments]))
+    level_norm = normalize_program_fee_level(level) or level.upper()
+
+    logger.info(
+        f"[fee-preview] institution_id={institution_id}, school_id={school_id}, level={level_norm}"
+    )
+
+    installments = get_installments_for_level(db, institution_id, school_id, level_norm)
+    logger.info(f"[fee-preview] Found {len(installments)} installments for level={level_norm}")
+
+    all_installments = get_installments(db, institution_id, school_id)
+    available_levels = sorted({inst.level.upper() for inst in all_installments if inst.level})
     logger.info(f"[fee-preview] Available levels in DB: {available_levels}")
-    
+
     total_fee = sum(float(inst.amount) for inst in installments) if installments else 0
-    
-    # If no specific level found, try without level filter
-    if not installments and all_installments:
-        logger.warning(f"[fee-preview] No installments for level={level_upper}, using all available")
-        installments = all_installments
-        total_fee = sum(float(inst.amount) for inst in installments)
-    
     logger.info(f"[fee-preview] Final total_fee={total_fee}")
-    
+
     return {
         "school_id": school_id,
-        "level": level_upper,
+        "level": level_norm,
         "total_fee": total_fee,
         "installments_count": len(installments),
         "available_levels": available_levels,
@@ -121,9 +127,10 @@ def get_student_payment(
     payment = payment_api.get_student_payment_by_id(db, payment_id, institution_id)
     
     # Students can only view their own payments
-    if currentUser.role == "student" and payment.student_id != currentUser.user_id:
-        from app.exceptions import ForbiddenError
-        raise ForbiddenError("You can only view your own payment records")
+    if user_has_role(currentUser.user, "student"):
+        student_id = _resolve_student_id(db, currentUser)
+        if payment.student_id != student_id:
+            raise ForbiddenError("You can only view your own payment records")
     
     return StudentPaymentResponse.from_model(payment)
 
@@ -132,18 +139,38 @@ def get_student_payment(
 def get_my_payment_status(
     school_id: Optional[int] = None,
     level: Optional[str] = None,
+    academic_year_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     currentUser: AuthUser = Depends(auth_guard)
 ):
     """Get current student's payment status"""
-    if currentUser.role != "student":
-        from app.exceptions import ForbiddenError
+    if not user_has_role(currentUser.user, "student"):
         raise ForbiddenError("This endpoint is only for students")
-    
+
     institution_id = int(currentUser.institution_id)
-    student_id = currentUser.user_id
-    
-    return payment_api.get_payment_status(db, student_id, institution_id, school_id, level)
+    student_row = resolve_student_for_logged_in_user(db, currentUser.user)
+    if not student_row:
+        raise NotFoundError("Student record not found for current user")
+    student_id = student_row.id
+
+    effective_year_id = academic_year_id or student_row.academic_year_id
+    academic_year_name = get_academic_year_name(db, institution_id, effective_year_id)
+    effective_school_id = school_id or student_row.school_id
+    effective_level = (
+        resolve_program_fee_level(student_row)
+        or resolve_program_fee_level(student_row, fee_level=level)
+        or level
+    )
+
+    return payment_api.get_payment_status(
+        db,
+        student_id,
+        institution_id,
+        effective_school_id,
+        effective_level,
+        academic_year=academic_year_name,
+        academic_year_id=effective_year_id,
+    )
 
 
 @router.get("/students/{student_id}/payment-status", response_model=StudentPaymentStatusResponse)
@@ -157,8 +184,7 @@ def get_student_payment_status(
     """Get payment status for a specific student (admin only)"""
     institution_id = int(currentUser.institution_id)
     
-    if currentUser.role == "student":
-        from app.exceptions import ForbiddenError
+    if _is_student_only(currentUser):
         raise ForbiddenError("Only admins can view other students' payment status")
     
     return payment_api.get_payment_status(db, student_id, institution_id, school_id, level)
@@ -176,8 +202,7 @@ def create_student_payment(
     """
     institution_id = int(currentUser.institution_id)
     
-    if currentUser.role == "student":
-        from app.exceptions import ForbiddenError
+    if _is_student_only(currentUser):
         raise ForbiddenError("Only admins can create payment records")
     
     payment = payment_api.create_student_payment(db, institution_id, payment_data)
@@ -194,8 +219,7 @@ def update_student_payment(
     """Update a student payment record"""
     institution_id = int(currentUser.institution_id)
     
-    if currentUser.role == "student":
-        from app.exceptions import ForbiddenError
+    if _is_student_only(currentUser):
         raise ForbiddenError("Only admins can update payment records")
     
     payment = payment_api.update_student_payment(db, payment_id, institution_id, payment_data)
@@ -211,8 +235,7 @@ def delete_student_payment(
     """Delete a student payment record (admin only)"""
     institution_id = int(currentUser.institution_id)
     
-    if currentUser.role == "student":
-        from app.exceptions import ForbiddenError
+    if _is_student_only(currentUser):
         raise ForbiddenError("Only admins can delete payment records")
     
     payment_api.delete_student_payment(db, payment_id, institution_id)
@@ -231,8 +254,7 @@ def record_payment(
     """
     institution_id = int(currentUser.institution_id)
     
-    if currentUser.role == "student":
-        from app.exceptions import ForbiddenError
+    if _is_student_only(currentUser):
         raise ForbiddenError("Only admins can record payments")
     
     payment = payment_api.record_payment(db, institution_id, payment_request)

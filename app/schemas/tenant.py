@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field, field_validator, computed_field
 from typing import Optional, Literal
-from datetime import datetime, timezone
-from dateutil.relativedelta import relativedelta
+from datetime import datetime, timezone, timedelta
+
+BILLING_CYCLE_DAYS = 31
 
 
 class TenantSuspendRequest(BaseModel):
@@ -11,6 +12,11 @@ class TenantSuspendRequest(BaseModel):
 class TenantResponse(BaseModel):
     id: int
     name: str
+    region: Optional[str] = None
+    city : Optional[str] = None
+    neighbourhood: Optional[str] = None
+    email: Optional[str] = None
+    telephone: Optional[str] = None
     category: str  # HI or SI
     domain: Optional[str] = None
     database_url: Optional[str] = None
@@ -28,13 +34,9 @@ class TenantResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     admin_username: Optional[str] = None
-    email: Optional[str] = Field(
-        default=None,
-        description="Institution contact email for display (e.g. receipts)",
-    )
     phone: Optional[str] = Field(
         default=None,
-        description="Institution contact phone for display (e.g. receipts)",
+        description="Institution contact phone for display (fallback from admin user)",
     )
 
     @computed_field
@@ -63,20 +65,14 @@ class TenantResponse(BaseModel):
     @computed_field
     @property
     def next_subscription_date(self) -> Optional[datetime]:
-        # Only calculate for paid plans (non-freemium)
         if not self.subscription_plan or self.subscription_plan.lower() == 'freemium':
             return None
-        start = self.subscription_started_at
-        billing = self.billing_type
-        if not start or not billing:
+        if 'premium' not in (self.subscription_plan or '').lower():
             return None
-        if billing == "monthly":
-            return start + relativedelta(months=1)
-        elif billing == "quarterly":
-            return start + relativedelta(months=3)
-        elif billing == "yearly" or billing == "annually":
-            return start + relativedelta(years=1)
-        return None
+        payment = self.payment_date or self.subscription_started_at
+        if not payment:
+            return None
+        return payment + timedelta(days=BILLING_CYCLE_DAYS)
 
     class Config:
         from_attributes = True
@@ -84,6 +80,11 @@ class TenantResponse(BaseModel):
 
 class TenantRequest(BaseModel):
     name: str
+    region: str = Field(..., min_length=1, max_length=70)
+    city: str = Field(..., min_length=1, max_length=70)
+    neighbourhood: str = Field(..., min_length=1, max_length=70)
+    email: str = Field(..., min_length=1, max_length=70, description="Institution contact email")
+    telephone: str = Field(..., min_length=1, max_length=70, description="Institution contact telephone")
     category: Literal["HI", "SI"] = Field(..., description="Tenant category: HI (Higher Institution) or SI (Secondary Institution)")
     domain: Optional[str] = None
     database_name: Optional[str] = None
@@ -109,6 +110,11 @@ class TenantRequest(BaseModel):
 
 class TenantUpdate(BaseModel):
     name: Optional[str] = None
+    region: Optional[str] = Field(None, max_length=70)
+    city: Optional[str] = Field(None, max_length=70)
+    neighbourhood: Optional[str] = Field(None, max_length=70)
+    email: Optional[str] = Field(None, max_length=70, description="Institution contact email")
+    telephone: Optional[str] = Field(None, max_length=70, description="Institution contact telephone")
     category: Optional[Literal["HI", "SI"]] = Field(None, description="Tenant category: HI (Higher Institution) or SI (Secondary Institution)")
     domain: Optional[str] = None
     is_active: Optional[bool] = None

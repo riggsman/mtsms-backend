@@ -1,0 +1,1086 @@
+{
+  "features": [
+    {
+      "id": "quick_pay_fees",
+      "name": "Pay Fees",
+      "description": "Allow students to pay fees from quick actions",
+      "category": "quickActions",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "fee-payment"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "quick_download_results",
+      "name": "Download Results",
+      "description": "Allow students to download academic results",
+      "category": "quickActions",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": [
+        "Download Results"
+      ]
+    },
+    {
+      "id": "quick_submit_assignment",
+      "name": "Submit Assignment",
+      "description": "Allow students to submit assignments from quick actions",
+      "category": "quickActions",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "quick_view_timetable",
+      "name": "View Timetable",
+      "description": "Allow students to view their class timetable",
+      "category": "quickActions",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "personal_view_profile",
+      "name": "View Profile",
+      "description": "Allow students to view their personal information",
+      "category": "personalInfo",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "personal_edit_profile",
+      "name": "Edit Profile",
+      "description": "Allow students to edit their personal information",
+      "category": "personalInfo",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "personal_update_contact",
+      "name": "Update Contact Info",
+      "description": "Allow students to update contact information",
+      "category": "personalInfo",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "academic_view_grades",
+      "name": "View Grades",
+      "description": "Allow students to view their grades per subject",
+      "category": "academicOverview",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "grades",
+        "academics"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "academic_view_gpa",
+      "name": "View GPA",
+      "description": "Allow students to view their GPA and average score",
+      "category": "academicOverview",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "academic_performance_charts",
+      "name": "Performance Charts",
+      "description": "Show performance trends with charts",
+      "category": "academicOverview",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "academic_teacher_remarks",
+      "name": "Teacher Remarks",
+      "description": "Allow students to view teacher remarks/feedback",
+      "category": "academicOverview",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "timetable_view_schedule",
+      "name": "View Schedule",
+      "description": "Allow students to view daily/weekly class schedule",
+      "category": "timetable",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "schedule"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "timetable_exam_timetable",
+      "name": "Exam Timetable",
+      "description": "Allow students to view exam timetable",
+      "category": "timetable",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "academic-calendar"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "timetable_class_reminders",
+      "name": "Class Reminders",
+      "description": "Send upcoming class reminders",
+      "category": "timetable",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "assignments_view",
+      "name": "View Assignments",
+      "description": "Allow students to view list of assignments",
+      "category": "assignments",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "assignments"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "assignments_submit",
+      "name": "Submit Assignments",
+      "description": "Allow students to submit assignments",
+      "category": "assignments",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "assignments_view_status",
+      "name": "View Submission Status",
+      "description": "Show assignment status (submitted, late, graded)",
+      "category": "assignments",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "assignments_upload_homework",
+      "name": "Upload Homework Portal",
+      "description": "Allow students to upload homework files",
+      "category": "assignments",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "results_view",
+      "name": "View Results",
+      "description": "Allow students to view exam results",
+      "category": "results",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "results_download_report_card",
+      "name": "Download Report Card",
+      "description": "Allow students to download report cards",
+      "category": "results",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": [
+        "Download Report Card"
+      ]
+    },
+    {
+      "id": "results_transcript_access",
+      "name": "Transcript Access",
+      "description": "Allow students to access transcripts",
+      "category": "results",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "results_historical",
+      "name": "Historical Records",
+      "description": "Allow students to view historical performance records",
+      "category": "results",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "academic-history"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "fees_view_balance",
+      "name": "View Fee Balance",
+      "description": "Allow students to view fee balance",
+      "category": "fees",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "fee-payment",
+        "school-fee-status",
+        "finance"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_finance_management",
+      "name": "Finance Management",
+      "description": "Tenant finance dashboard, budgets, and financial operations",
+      "category": "adminFinance",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["finance-management"],
+      "nameAliases": ["Finance", "Finance Management"]
+    },
+    {
+      "id": "fees_payment_history",
+      "name": "Payment History",
+      "description": "Allow students to view payment history",
+      "category": "fees",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "fees_download_receipts",
+      "name": "Download Receipts",
+      "description": "Allow students to download payment receipts",
+      "category": "fees",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "fees_mobile_money",
+      "name": "Mobile Money Payment",
+      "description": "Allow students to pay fees via mobile money",
+      "category": "fees",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "announcements_view",
+      "name": "View Announcements",
+      "description": "Allow students to view school announcements",
+      "category": "announcements",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "announcements"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "announcements_class_updates",
+      "name": "Class-specific Updates",
+      "description": "Allow students to receive class-specific updates",
+      "category": "announcements",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "announcements_alerts",
+      "name": "Alerts",
+      "description": "Send alerts for exam dates, fee deadlines, etc.",
+      "category": "announcements",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "docs_course_materials",
+      "name": "Course Materials",
+      "description": "Allow students to access course materials (PDFs, slides)",
+      "category": "documents",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "notes"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "docs_school_documents",
+      "name": "School Documents",
+      "description": "Allow students to access school documents (rules, forms)",
+      "category": "documents",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "docs_certificates",
+      "name": "Certificates",
+      "description": "Allow students to download certificates",
+      "category": "documents",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "comm_message_teachers",
+      "name": "Message Teachers/Admin",
+      "description": "Allow students to message teachers or admin",
+      "category": "communication",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "student-chats"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "comm_notifications_inbox",
+      "name": "Notifications Inbox",
+      "description": "Allow students to receive notifications",
+      "category": "communication",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "comm_chat_forum",
+      "name": "Chat/Discussion Forum",
+      "description": "Allow students to participate in chat or discussion forums",
+      "category": "communication",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "attendance_view",
+      "name": "View Attendance",
+      "description": "Allow students to view daily attendance status",
+      "category": "attendance",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "attendance"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "attendance_percentage",
+      "name": "Attendance Percentage",
+      "description": "Show attendance percentage to students",
+      "category": "attendance",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "attendance_absence_history",
+      "name": "Absence History",
+      "description": "Allow students to view absence history",
+      "category": "attendance",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "settings_update_profile",
+      "name": "Update Profile Info",
+      "description": "Allow students to update profile information",
+      "category": "settings",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "settings_change_password",
+      "name": "Change Password",
+      "description": "Allow students to change password",
+      "category": "settings",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "settings_notification_prefs",
+      "name": "Notification Preferences",
+      "description": "Allow students to set notification preferences",
+      "category": "settings",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_class_management",
+      "name": "Class Management",
+      "description": "Manage school classes, sections, and class assignments",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["class-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_user_management",
+      "name": "User Management",
+      "description": "Manage tenant users, roles, and access",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["user-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_lecturer_management",
+      "name": "Lecturer Management",
+      "description": "Manage lecturers and teaching staff",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["lecturer-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_department_management",
+      "name": "Department Management",
+      "description": "Manage academic departments",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["department-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_school_management",
+      "name": "School Management",
+      "description": "Manage schools, campuses, and organizational units",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["school-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_specialization_management",
+      "name": "Specialization Management",
+      "description": "Manage programs and specializations",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["specialization-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_course_management",
+      "name": "Course Management",
+      "description": "Manage courses, modules, and curriculum",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["courses"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_course_performance",
+      "name": "Course Performance",
+      "description": "View course performance analytics and reports",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["course-performance"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_hr_management",
+      "name": "HR Management",
+      "description": "Staff directory, HR attendance, and employee documents",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["hr-management"],
+      "nameAliases": ["HR Management"]
+    },
+    {
+      "id": "admin_records_management",
+      "name": "Records Management",
+      "description": "Institutional records, archives, and document retention",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["records-management"],
+      "nameAliases": ["Records Management"]
+    },
+    {
+      "id": "admin_student_management",
+      "name": "Student Management",
+      "description": "Manage enrolled students and student profiles",
+      "category": "adminStudents",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["students"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_student_payments",
+      "name": "Payment Management",
+      "description": "Process and track student fee payments (payment management)",
+      "category": "adminStudents",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["student-payments"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_admission",
+      "name": "Admission",
+      "description": "Student admission and enrollment workflows",
+      "category": "adminStudents",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["admission"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_payroll_report",
+      "name": "Payroll Report",
+      "description": "Payroll reporting and staff compensation summaries",
+      "category": "adminFinance",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["payroll-report"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_inventory",
+      "name": "Inventory",
+      "description": "School inventory and asset tracking",
+      "category": "adminFinance",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["inventory"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_push_messages",
+      "name": "Push Messages",
+      "description": "Broadcast push notifications to users",
+      "category": "adminCommunication",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["push-messages"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_correspondence",
+      "name": "Correspondence",
+      "description": "Official correspondence and messaging workflows",
+      "category": "adminCommunication",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["correspondence"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_complaints",
+      "name": "Complaints",
+      "description": "Manage and resolve user complaints",
+      "category": "adminOperations",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["complaints"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_take_attendance",
+      "name": "Take Attendance",
+      "description": "Record and manage class attendance",
+      "category": "adminOperations",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["take-attendance"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_performance_tracking",
+      "name": "Performance Tracking",
+      "description": "Track academic and staff performance metrics",
+      "category": "adminOperations",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["performance-tracking"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_activities",
+      "name": "Activities",
+      "description": "School activities log and audit trail",
+      "category": "adminOperations",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["activities"],
+      "nameAliases": []
+    },
+    {
+      "id": "staff_student_records",
+      "name": "Staff Student Records",
+      "description": "Allow staff to view and manage student academic records",
+      "category": "staffTools",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["student-records"],
+      "nameAliases": []
+    },
+    {
+      "id": "staff_payroll_clock",
+      "name": "Payroll Clock",
+      "description": "Staff clock-in and clock-out for payroll",
+      "category": "staffTools",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["payroll-clock"],
+      "nameAliases": []
+    },
+    {
+      "id": "nav_overview",
+      "name": "Dashboard Overview",
+      "description": "Access the main dashboard overview",
+      "category": "navigation",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["overview"],
+      "nameAliases": []
+    },
+    {
+      "id": "nav_settings",
+      "name": "Settings",
+      "description": "Access account and application settings",
+      "category": "navigation",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["settings"],
+      "nameAliases": []
+    },
+    {
+      "id": "student_help_desk",
+      "name": "Help Desk",
+      "description": "Student and parent help desk support",
+      "category": "studentPortal",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["help-desk"],
+      "nameAliases": []
+    },
+    {
+      "id": "student_school_email",
+      "name": "School Email",
+      "description": "Access school email portal",
+      "category": "studentPortal",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["school-email"],
+      "nameAliases": []
+    },
+    {
+      "id": "student_course_management",
+      "name": "Student Course Management",
+      "description": "Student course registration and enrolled courses",
+      "category": "studentPortal",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "course-management",
+        "course-registration",
+        "my-courses"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "student_id_card",
+      "name": "Student ID Card",
+      "description": "View and download student ID card",
+      "category": "studentPortal",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["id-card"],
+      "nameAliases": []
+    },
+    {
+      "id": "student_fee_structure",
+      "name": "Student Fee Structure",
+      "description": "View school fee structure and status",
+      "category": "fees",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["fee-structure"],
+      "nameAliases": []
+    },
+    {
+      "id": "student_messages",
+      "name": "Student Messages",
+      "description": "Student messaging with teachers and admin",
+      "category": "communication",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["student-messages"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_schedule_management",
+      "name": "Schedule Management",
+      "description": "Manage class schedules and timetables",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["schedule-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_assignment_management",
+      "name": "Assignment Management",
+      "description": "Admin assignment creation and management",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["assignment-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_notes_management",
+      "name": "Notes Management",
+      "description": "Admin course notes and materials management",
+      "category": "adminManagement",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["admin-notes"],
+      "nameAliases": []
+    },
+    {
+      "id": "admin_fee_structure",
+      "name": "Fee Structure",
+      "description": "Configure school fee structures by level and program",
+      "category": "adminFinance",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["fee-structure-management"],
+      "nameAliases": ["Fee Structure"]
+    },
+    {
+      "id": "admin_installments",
+      "name": "Installments",
+      "description": "Manage fee installment plans and due dates",
+      "category": "adminFinance",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["installments-management"],
+      "nameAliases": ["Installments"]
+    },
+    {
+      "id": "staff_my_classes",
+      "name": "My Classes",
+      "description": "Staff view of assigned classes",
+      "category": "staffTools",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["staff-my-classes"],
+      "nameAliases": []
+    },
+    {
+      "id": "staff_assignment_management",
+      "name": "Staff Assignment Management",
+      "description": "Staff assignment creation and grading",
+      "category": "staffTools",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["staff-assignment-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "staff_performance_tracking",
+      "name": "Staff Performance Tracking",
+      "description": "Staff performance tracking and analytics",
+      "category": "staffTools",
+      "freemium_enabled": false,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["staff-performance-tracking"],
+      "nameAliases": []
+    },
+    {
+      "id": "staff_complaints",
+      "name": "Staff Complaints",
+      "description": "Staff access to complaints module",
+      "category": "staffTools",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["staff-complaints"],
+      "nameAliases": []
+    },
+    {
+      "id": "student_complaints",
+      "name": "Student Complaints",
+      "description": "Student complaints and feedback",
+      "category": "studentPortal",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": [
+        "student-complaints",
+        "file-complaint",
+        "complaints"
+      ],
+      "nameAliases": []
+    },
+    {
+      "id": "staff_announcements",
+      "name": "Staff Announcements",
+      "description": "View announcements as staff or teacher",
+      "category": "staffTools",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["staff-announcements"],
+      "nameAliases": []
+    },
+    {
+      "id": "parent_announcements",
+      "name": "Parent Announcements",
+      "description": "View school announcements as parent",
+      "category": "parentPortal",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["parent-announcements"],
+      "nameAliases": []
+    },
+    {
+      "id": "system_tenant_management",
+      "name": "Tenant Management",
+      "description": "Platform tenant management (system admin)",
+      "category": "systemAdmin",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["tenant-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "system_user_management",
+      "name": "System User Management",
+      "description": "Platform system user management",
+      "category": "systemAdmin",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["system-user-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "system_client_messages",
+      "name": "Client Messages",
+      "description": "Platform client messages inbox",
+      "category": "systemAdmin",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["client-messages"],
+      "nameAliases": []
+    },
+    {
+      "id": "system_fee_structure",
+      "name": "Platform Fee Structure",
+      "description": "Global fee structure configuration (system admin)",
+      "category": "systemAdmin",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["system-fee-structure"],
+      "nameAliases": []
+    },
+    {
+      "id": "system_financial_overview",
+      "name": "Financial Overview",
+      "description": "Platform financial overview",
+      "category": "systemAdmin",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["financial-overview"],
+      "nameAliases": []
+    },
+    {
+      "id": "system_subscription_management",
+      "name": "Subscription Management",
+      "description": "Platform subscription and service configuration",
+      "category": "systemAdmin",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["subscription-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "system_specialization_management",
+      "name": "Platform Specializations",
+      "description": "Global specialization management",
+      "category": "systemAdmin",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["system-specialization-management"],
+      "nameAliases": []
+    },
+    {
+      "id": "system_database_config",
+      "name": "Database Configuration",
+      "description": "Platform database configuration",
+      "category": "systemAdmin",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["database-config"],
+      "nameAliases": []
+    },
+    {
+      "id": "system_analytics",
+      "name": "System Analytics",
+      "description": "Platform analytics dashboard",
+      "category": "systemAdmin",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["system-analytics"],
+      "nameAliases": []
+    },
+    {
+      "id": "system_settings",
+      "name": "System Settings",
+      "description": "Platform system settings",
+      "category": "systemAdmin",
+      "freemium_enabled": true,
+      "premium_enabled": true,
+      "service_state_enabled": true,
+      "menuIds": ["system-settings"],
+      "nameAliases": []
+    }
+  ]
+}

@@ -19,7 +19,15 @@ def test_create_tenant(sysadmin_client, sysadmin_token):
     unique_name = f"legacy_school_{int(time.time() * 1000)}"
     response = sysadmin_client.post(
         "/api/v1/tenants",
-        json={"name": unique_name, "category": "HI"},
+        json={
+            "name": unique_name,
+            "category": "HI",
+            "region": "Littoral",
+            "city": "Douala",
+            "neighbourhood": "Akwa",
+            "email": f"{unique_name}@school.test",
+            "telephone": f"+237{int(time.time()) % 1000000000}",
+        },
         headers={"Authorization": f"Bearer {sysadmin_token}"},
     )
     assert response.status_code in (200, 201, 400)

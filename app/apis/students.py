@@ -356,6 +356,56 @@ def create_student(db: Session, student: StudentRequest, institution_id: Optiona
             from app.helpers.logger import logger
             logger.error(f"Error sending registration email to student {student.email}: {e}")
     
+    try:
+        from app.apis.parent_accounts import sync_parent_user_for_guardian
+        from app.services.email_service import EmailService
+        from app.helpers.async_helper import run_async_safe
+        from app.models.tenant import Tenant
+
+        plain_pw = sync_parent_user_for_guardian(
+            db,
+            institution_id=final_institution_id,
+            guardian_email=student.guardian_email,
+            guardian_name=student.guardian_name,
+            guardian_phone=student.guardian_phone,
+            guardian_address=student.guardian_address or student.address,
+        )
+        db.commit()
+        if plain_pw and student.guardian_email:
+            try:
+                inst_name = None
+                trow = db.query(Tenant).filter(Tenant.id == final_institution_id).first()
+                if trow:
+                    inst_name = trow.name
+                parent_nm = (student.guardian_name or "").strip() or "Parent"
+                u = (
+                    db.query(User)
+                    .filter(
+                        func.lower(User.email) == (student.guardian_email or "").strip().lower(),
+                        User.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                uname = u.username if u else (student.guardian_email or "").strip()
+                run_async_safe(
+                    EmailService.send_parent_portal_welcome_email(
+                        parent_name=parent_nm,
+                        parent_email=(student.guardian_email or "").strip(),
+                        username=uname,
+                        password=plain_pw,
+                        institution_name=inst_name,
+                    )
+                )
+            except Exception as mail_exc:
+                import logging
+
+                logging.getLogger(__name__).warning("Parent welcome email failed: %s", mail_exc)
+    except Exception as e:
+        db.rollback()
+        import logging
+
+        logging.getLogger(__name__).warning("Parent account sync skipped or failed: %s", e)
+
     return new_student
 
 

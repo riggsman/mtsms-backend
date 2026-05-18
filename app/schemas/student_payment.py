@@ -128,6 +128,38 @@ class RecordPaymentRequest(BaseModel):
     installments: List[PaymentInstallmentRequest]
 
 
+class FeePaymentReceiptItem(BaseModel):
+    """Online / mobile-money fee payment row for student fee status UI."""
+    id: int
+    receipt_number: Optional[str] = None
+    amount: float
+    status: str
+    reason: Optional[str] = None
+    payment_method: Optional[str] = None
+    provider: Optional[str] = None
+    transaction_id: Optional[str] = None
+    paid_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    currency: str = "XAF"
+    student_id_number: Optional[str] = None
+    department_name: Optional[str] = None
+    specialization_name: Optional[str] = None
+    institution_id: Optional[int] = None
+
+
+class FeeInstallmentPlanItem(BaseModel):
+    """Installment from fee catalog for the student's program level, with payment progress."""
+
+    id: int
+    installment_name: str
+    required_amount: float
+    paid_amount: float = 0
+    due_date_formatted: Optional[str] = None
+    is_paid: bool = False
+    is_overdue: bool = False
+    level: Optional[str] = None
+
+
 class StudentPaymentStatusResponse(BaseModel):
     student_id: int
     school_id: int
@@ -138,4 +170,8 @@ class StudentPaymentStatusResponse(BaseModel):
     outstanding_amount: float
     installments_paid: int
     installments_total: int
+    installments: List[FeeInstallmentPlanItem] = []
     overdue_installments: List[StudentPaymentInstallmentResponse] = []
+    academic_year: Optional[str] = None
+    academic_year_id: Optional[int] = None
+    online_payments: List[FeePaymentReceiptItem] = []

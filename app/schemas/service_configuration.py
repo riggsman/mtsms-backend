@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from datetime import datetime
 
 
@@ -43,7 +43,7 @@ class ServiceConfigurationBulkRequest(BaseModel):
 class ServiceConfigurationUpdateItem(BaseModel):
     """Individual configuration item for bulk update"""
 
-    service_id: int = Field(..., description="Subscription service ID")
+    service_id: Union[int, str] = Field(..., description="Subscription service ID or catalog button_id")
     subscription_type: str = Field(..., description="Subscription type (e.g., freemium, premium)")
     is_enabled: bool = Field(..., description="Whether this subscription type is enabled")
 

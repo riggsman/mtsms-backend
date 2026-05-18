@@ -15,12 +15,74 @@ from app.schemas.student_payment import (
     StudentPaymentResponse,
     RecordPaymentRequest,
     StudentPaymentStatusResponse,
-    StudentPaymentInstallmentResponse
+    StudentPaymentInstallmentResponse,
+    FeePaymentReceiptItem,
+    FeeInstallmentPlanItem,
 )
+from app.helpers.program_level import normalize_program_fee_level, resolve_program_fee_level
+from app.apis.fee_structure import get_installments_for_level
+from app.models.payment import Payment
+from app.apis.school import get_academic_year_date_bounds
 from app.exceptions import NotFoundError, ValidationError
 
 
 VALID_LEVELS = ["HND", "DEGREE", "MASTERS"]
+
+
+def _normalize_level(level: Optional[str]) -> Optional[str]:
+    if not level:
+        return None
+    return normalize_program_fee_level(level) or str(level).strip().upper()
+
+
+def _build_plan_installments(
+    db: Session,
+    institution_id: int,
+    school_id: int,
+    level: str,
+    student_payment: Optional[StudentPayment] = None,
+) -> List[FeeInstallmentPlanItem]:
+    """Fee catalog installments for program level, merged with student payment progress."""
+    level_norm = _normalize_level(level)
+    if not level_norm or not school_id:
+        return []
+
+    catalog = get_installments_for_level(db, institution_id, school_id, level_norm)
+    paid_by_name: dict = {}
+    if student_payment:
+        rows = (
+            db.query(StudentPaymentInstallment)
+            .filter(StudentPaymentInstallment.student_payment_id == student_payment.id)
+            .all()
+        )
+        for row in rows:
+            key = (row.installment_name or "").strip().lower()
+            if key:
+                paid_by_name[key] = row
+
+    now = datetime.utcnow()
+    plan: List[FeeInstallmentPlanItem] = []
+    for inst in catalog:
+        key = (inst.name or "").strip().lower()
+        paid_row = paid_by_name.get(key)
+        due = inst.due_date
+        due_str = due.strftime("%Y-%m-%d") if due else None
+        is_paid = bool(paid_row and paid_row.is_paid)
+        paid_amount = float(paid_row.paid_amount or 0) if paid_row else 0.0
+        is_overdue = bool(due and due < now and not is_paid)
+        plan.append(
+            FeeInstallmentPlanItem(
+                id=inst.id,
+                installment_name=inst.name,
+                required_amount=float(inst.amount),
+                paid_amount=paid_amount,
+                due_date_formatted=due_str,
+                is_paid=is_paid,
+                is_overdue=is_overdue,
+                level=inst.level,
+            )
+        )
+    return plan
 
 
 def get_student_payment(
@@ -28,19 +90,22 @@ def get_student_payment(
     student_id: int,
     institution_id: int,
     school_id: Optional[int] = None,
-    level: Optional[str] = None
+    level: Optional[str] = None,
+    academic_year: Optional[str] = None,
 ) -> Optional[StudentPayment]:
     """Get student payment record"""
     query = db.query(StudentPayment).filter(
         StudentPayment.student_id == student_id,
         StudentPayment.institution_id == institution_id
     )
-    
+
     if school_id:
         query = query.filter(StudentPayment.school_id == school_id)
     if level:
         query = query.filter(StudentPayment.level == level.upper())
-    
+    if academic_year:
+        query = query.filter(StudentPayment.academic_year == academic_year)
+
     return query.first()
 
 
@@ -90,9 +155,8 @@ def create_student_payment(
     
     logger.info(f"[create_student_payment] institution_id={institution_id}, school_id={payment_data.school_id}, level={payment_data.level}")
     
-    # Validate level
-    level = payment_data.level.upper()
-    if level not in VALID_LEVELS:
+    level = _normalize_level(payment_data.level)
+    if not level or level not in VALID_LEVELS:
         raise ValidationError(f"Level must be one of: {', '.join(VALID_LEVELS)}")
     
     # Check if payment record already exists for this student/school/level
@@ -107,56 +171,20 @@ def create_student_payment(
             f"at {level} level"
         )
     
-    # Get total fee from fee_installments table
-    from app.models.fee_structure import FeeInstallment
-    total_fee = 0
-    fee_source = None
-    
-    # Filter by tenant_id (institution_id), school_id, and specific level
-    installments = db.query(FeeInstallment).filter(
-        FeeInstallment.tenant_id == institution_id,
-        FeeInstallment.school_id == payment_data.school_id,
-        FeeInstallment.level == level,
-        FeeInstallment.is_active == True
-    ).all()
-    
-    logger.info(f"[create_student_payment] Level {level}: Found {len(installments)} installments for school={payment_data.school_id}")
-    if installments:
-        fee_source = f"Exact match for {level}"
-        total_fee = sum(float(inst.amount) for inst in installments)
-    
-    # If no specific level found, try without tenant filter but with level
+    installments = get_installments_for_level(
+        db, institution_id, payment_data.school_id, level
+    )
+    logger.info(
+        f"[create_student_payment] Level {level}: Found {len(installments)} installments "
+        f"for school={payment_data.school_id}"
+    )
     if not installments:
-        installments = db.query(FeeInstallment).filter(
-            FeeInstallment.school_id == payment_data.school_id,
-            FeeInstallment.level == level,
-            FeeInstallment.is_active == True
-        ).all()
-        logger.info(f"[create_student_payment] Fallback 1: Found {len(installments)} installments without tenant filter")
-        if installments:
-            fee_source = f"Fallback: {level} (no tenant filter)"
-            total_fee = sum(float(inst.amount) for inst in installments)
-    
-    # Last fallback: all active installments for this school (show warning!)
-    if not installments:
-        all_school_instals = db.query(FeeInstallment).filter(
-            FeeInstallment.school_id == payment_data.school_id,
-            FeeInstallment.is_active == True
-        ).all()
-        
-        # Show what levels are available
-        available_levels = list(set([inst.level for inst in all_school_instals]))
-        logger.warning(f"[create_student_payment] No {level} fee found! Available levels: {available_levels}")
-        
-        # Use whatever is available
-        if all_school_instals:
-            installments = all_school_instals
-            fee_source = f"WARNING: Using all levels (no {level} specific fee) - available: {available_levels}"
-            total_fee = sum(float(inst.amount) for inst in installments)
-            logger.warning(f"[create_student_payment] Using fallback fee: {total_fee} from {len(installments)} installments")
-    
-    if installments:
-        logger.info(f"[create_student_payment] Fee source: {fee_source}, Total fee: {total_fee}")
+        raise ValidationError(
+            f"No fee installments configured for {level} at this school. "
+            "Ask administration to set up installments for your program level."
+        )
+    total_fee = sum(float(inst.amount) for inst in installments)
+    logger.info(f"[create_student_payment] Total fee from catalog: {total_fee}")
     
     # Create student payment record
     student_payment = StudentPayment(
@@ -281,64 +309,165 @@ def record_payment(
     return payment
 
 
+def _online_payments_for_student(
+    db: Session,
+    student_id: int,
+    institution_id: int,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+) -> tuple:
+    """Paid and pending online payments for a student, optionally within academic year bounds."""
+    from sqlalchemy import or_
+
+    query = db.query(Payment).filter(
+        Payment.student_id == student_id,
+        Payment.institution_id == institution_id,
+        Payment.deleted_at.is_(None),
+    )
+    if start_date:
+        query = query.filter(
+            or_(Payment.paid_at >= start_date, Payment.created_at >= start_date)
+        )
+    if end_date:
+        query = query.filter(
+            or_(Payment.paid_at <= end_date, Payment.created_at <= end_date)
+        )
+    rows = query.order_by(Payment.created_at.desc()).all()
+    items: List[FeePaymentReceiptItem] = []
+    paid_total = 0.0
+    for p in rows:
+        amt = float(p.amount or 0)
+        if (p.status or "").lower() == "paid":
+            paid_total += amt
+        items.append(
+            FeePaymentReceiptItem(
+                id=p.id,
+                receipt_number=p.receipt_number,
+                amount=amt,
+                status=p.status or "pending",
+                reason=p.reason,
+                payment_method=p.payment_method,
+                provider=p.provider,
+                transaction_id=p.transaction_id,
+                paid_at=p.paid_at,
+                created_at=p.created_at,
+                currency=p.currency or "XAF",
+                student_id_number=p.student_id_number,
+                institution_id=p.institution_id,
+            )
+        )
+    return items, paid_total
+
+
 def get_payment_status(
     db: Session,
     student_id: int,
     institution_id: int,
     school_id: Optional[int] = None,
-    level: Optional[str] = None
+    level: Optional[str] = None,
+    academic_year: Optional[str] = None,
+    academic_year_id: Optional[int] = None,
 ) -> StudentPaymentStatusResponse:
-    """Get payment status for a student"""
+    """Get payment status for a student, including online payments for the academic year."""
     import logging
     logger = logging.getLogger(__name__)
-    
-    # Normalize level to uppercase for consistent matching
-    level_norm = level.upper() if level else None
-    logger.info(f"[get_payment_status] student_id={student_id}, school_id={school_id}, level={level} -> normalized={level_norm}")
-    
-    payment = get_student_payment(db, student_id, institution_id, school_id, level_norm)
-    logger.info(f"[get_payment_status] Found payment: {payment.id if payment else None}, level={payment.level if payment else None}")
-    
+
+    level_norm = _normalize_level(level)
+    logger.info(
+        f"[get_payment_status] student_id={student_id}, school_id={school_id}, "
+        f"level={level_norm}, academic_year={academic_year}, academic_year_id={academic_year_id}"
+    )
+
+    payment = get_student_payment(
+        db, student_id, institution_id, school_id, level_norm, academic_year=academic_year
+    )
+    if not payment and academic_year:
+        payment = get_student_payment(
+            db, student_id, institution_id, school_id, level_norm, academic_year=None
+        )
+
+    start_dt, end_dt = get_academic_year_date_bounds(db, institution_id, academic_year_id)
+    online_items, online_paid_total = _online_payments_for_student(
+        db, student_id, institution_id, start_dt, end_dt
+    )
+
+    effective_school_id = school_id or (payment.school_id if payment else 0)
+    plan_installments = _build_plan_installments(
+        db,
+        institution_id,
+        effective_school_id,
+        level_norm or "",
+        student_payment=payment,
+    )
+
+    catalog_total = sum(i.required_amount for i in plan_installments)
+    installments_paid = sum(1 for i in plan_installments if i.is_paid)
+    installments_total = len(plan_installments)
+    now = datetime.utcnow()
+
+    overdue_plan = [i for i in plan_installments if i.is_overdue]
+    overdue_legacy = [
+        StudentPaymentInstallmentResponse(
+            id=i.id,
+            student_payment_id=payment.id if payment else 0,
+            student_id=student_id,
+            school_id=effective_school_id,
+            installment_name=i.installment_name,
+            required_amount=i.required_amount,
+            paid_amount=i.paid_amount,
+            due_date=datetime.strptime(i.due_date_formatted, "%Y-%m-%d")
+            if i.due_date_formatted
+            else now,
+            due_date_formatted=i.due_date_formatted,
+            is_paid=1 if i.is_paid else 0,
+            payment_date=None,
+            created_at=now,
+            updated_at=None,
+        )
+        for i in overdue_plan
+    ]
+
     if not payment:
+        total_fee = catalog_total
+        total_paid = online_paid_total
         return StudentPaymentStatusResponse(
             student_id=student_id,
-            school_id=school_id or 0,
-            level=level or "",
-            is_fully_paid=False,
-            total_fee=0,
-            total_paid=0,
-            outstanding_amount=0,
-            installments_paid=0,
-            installments_total=0,
-            overdue_installments=[]
+            school_id=effective_school_id,
+            level=level_norm or "",
+            is_fully_paid=total_fee > 0 and total_paid >= total_fee,
+            total_fee=total_fee,
+            total_paid=total_paid,
+            outstanding_amount=max(0.0, total_fee - total_paid),
+            installments_paid=installments_paid,
+            installments_total=installments_total,
+            installments=plan_installments,
+            overdue_installments=overdue_legacy,
+            academic_year=academic_year,
+            academic_year_id=academic_year_id,
+            online_payments=online_items,
         )
-    
-    # Load installments
-    installments = db.query(StudentPaymentInstallment).filter(
-        StudentPaymentInstallment.student_payment_id == payment.id
-    ).all()
-    
-    # Find overdue installments
-    now = datetime.utcnow()
-    overdue = [
-        StudentPaymentInstallmentResponse.from_model(i)
-        for i in installments
-        if not i.is_paid and i.due_date < now
-    ]
-    
-    installments_paid = sum(1 for i in installments if i.is_paid)
-    
+
+    installment_paid = float(payment.total_paid or 0)
+    total_paid = max(installment_paid, online_paid_total)
+    total_fee = catalog_total if catalog_total > 0 else float(payment.total_fee_amount or 0)
+    outstanding = max(0.0, total_fee - total_paid)
+    is_fully_paid = bool(payment.is_fully_paid) or (total_fee > 0 and total_paid >= total_fee)
+
     return StudentPaymentStatusResponse(
         student_id=student_id,
         school_id=payment.school_id,
-        level=payment.level,
-        is_fully_paid=bool(payment.is_fully_paid),
-        total_fee=float(payment.total_fee_amount or 0),
-        total_paid=float(payment.total_paid or 0),
-        outstanding_amount=float(payment.total_fee_amount or 0) - float(payment.total_paid or 0),
+        level=level_norm or payment.level,
+        is_fully_paid=is_fully_paid,
+        total_fee=total_fee,
+        total_paid=total_paid,
+        outstanding_amount=outstanding,
         installments_paid=installments_paid,
-        installments_total=len(installments),
-        overdue_installments=overdue
+        installments_total=installments_total,
+        installments=plan_installments,
+        overdue_installments=overdue_legacy,
+        academic_year=academic_year or payment.academic_year,
+        academic_year_id=academic_year_id,
+        online_payments=online_items,
     )
 
 
@@ -402,8 +531,8 @@ def apply_completed_online_payment(db: Session, payment_row) -> None:
     if not student or not student.school_id:
         return
 
-    level = (student.level or "").strip().upper()
-    if level not in VALID_LEVELS:
+    level = resolve_program_fee_level(student)
+    if not level:
         return
 
     sp = get_student_payment(

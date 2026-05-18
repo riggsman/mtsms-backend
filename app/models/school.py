@@ -31,6 +31,7 @@ class SchoolFee(DefaultBase):
     id = Column(Integer, primary_key=True)
     school_id = Column(Integer, ForeignKey("schools.id", ondelete="CASCADE"), nullable=False)
     level = Column(String(20), nullable=False)
+    academic_year_id = Column(Integer, nullable=True, index=True)
     fee_amount = Column(Numeric(10, 2), nullable=False, default=0)
     fee_deadline = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
@@ -38,4 +39,7 @@ class SchoolFee(DefaultBase):
 
     school = relationship("School", back_populates="fees")
 
-    __table_args__ = (Index("ix_school_fees_school_level", "school_id", "level", unique=True),)
+    __table_args__ = (
+        Index("ix_school_fees_school_level", "school_id", "level", unique=True),
+        Index("ix_school_fees_academic_year_id", "academic_year_id"),
+    )

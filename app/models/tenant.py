@@ -6,6 +6,11 @@ class Tenant(DefaultBase):
     __tablename__ = "tenants"
     id = Column(Integer, primary_key=True)
     name = Column(String(70), nullable=False, unique=True)
+    region = Column(String(70), nullable=True)
+    city = Column(String(70), nullable=True)
+    neighbourhood = Column(String(70), nullable=True, index=True)
+    email = Column(String(70), nullable=True, unique=True)
+    telephone = Column(String(70), nullable=True, unique=True)
     category = Column(String(10), nullable=False)  # HI or SI
     database_url = Column(String(200), nullable=True)
     domain = Column(String(200), nullable=True)

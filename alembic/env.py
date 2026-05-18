@@ -42,6 +42,13 @@ from app.models.system_settings import SystemSettings
 from app.models.contact_message import ContactMessage
 from app.models.subscription_service import SubscriptionService
 from app.models.service_configuration import ServiceConfiguration
+from app.models.platform_analytics import (
+    LoginAuditEvent,
+    OtpAuditEvent,
+    PlatformEmailEvent,
+    PlatformErrorEvent,
+    ApiRequestLog,
+)
 
 # Models using BaseModel_Base (tenant/shared database)
 from app.models.department import Department

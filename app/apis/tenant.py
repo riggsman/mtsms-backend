@@ -17,6 +17,115 @@ from app.helpers.user_roles import (
     parse_roles_to_list,
 )
 
+
+def _is_premium_plan(plan: Optional[str]) -> bool:
+    return bool(plan and "premium" in plan.strip().lower())
+
+
+def _parse_optional_datetime_str(value: Optional[str]) -> Optional[datetime.datetime]:
+    if value is None or not str(value).strip():
+        return None
+    raw = str(value).strip()
+    try:
+        return datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            return datetime.datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError:
+            raise ValidationError("Invalid date format. Use YYYY-MM-DD or ISO format.")
+
+
+def _resolve_billing_type_from_plan(db: Session, plan_name: Optional[str]) -> Optional[str]:
+    if not plan_name or not str(plan_name).strip():
+        return None
+    from app.models.subscription_plan import SubscriptionPlan
+
+    plan = (
+        db.query(SubscriptionPlan)
+        .filter(SubscriptionPlan.name == str(plan_name).strip())
+        .first()
+    )
+    if plan and plan.billing_period:
+        return str(plan.billing_period).strip()
+    return None
+
+
+def _apply_premium_billing_defaults(
+    db: Session, tenant: Tenant, update_data: dict
+) -> None:
+    """Fill payment_date / subscription_started_at / billing_type for premium tenants when missing."""
+    plan = (update_data.get("subscription_plan") or tenant.subscription_plan or "").strip()
+    if not _is_premium_plan(plan):
+        return
+    anchor = (
+        update_data.get("payment_date")
+        or update_data.get("subscription_started_at")
+        or tenant.payment_date
+        or tenant.subscription_started_at
+        or tenant.created_at
+    )
+    if not anchor:
+        return
+    if "payment_date" not in update_data and not tenant.payment_date:
+        update_data["payment_date"] = anchor
+    if "subscription_started_at" not in update_data and not tenant.subscription_started_at:
+        update_data["subscription_started_at"] = anchor
+    if "billing_type" not in update_data and not tenant.billing_type:
+        resolved = _resolve_billing_type_from_plan(db, plan)
+        update_data["billing_type"] = resolved or "monthly"
+
+
+def backfill_premium_tenant_billing(db: Session) -> int:
+    """Backfill missing billing fields for all premium tenants in the global DB."""
+    updated = 0
+    tenants = db.query(Tenant).filter(Tenant.subscription_plan.isnot(None)).all()
+    for tenant in tenants:
+        if not _is_premium_plan(tenant.subscription_plan):
+            continue
+        anchor = tenant.payment_date or tenant.subscription_started_at or tenant.created_at
+        if not anchor:
+            continue
+        changed = False
+        if not tenant.payment_date:
+            tenant.payment_date = anchor
+            changed = True
+        if not tenant.subscription_started_at:
+            tenant.subscription_started_at = anchor
+            changed = True
+        if not tenant.billing_type:
+            resolved = _resolve_billing_type_from_plan(db, tenant.subscription_plan)
+            tenant.billing_type = resolved or "monthly"
+            changed = True
+        if changed:
+            updated += 1
+    if updated:
+        db.commit()
+    return updated
+
+
+def _check_tenant_contact_uniqueness(
+    db: Session,
+    *,
+    email: Optional[str] = None,
+    telephone: Optional[str] = None,
+    exclude_tenant_id: Optional[int] = None,
+) -> None:
+    if email and str(email).strip():
+        em = str(email).strip()
+        q = db.query(Tenant).filter(Tenant.email == em)
+        if exclude_tenant_id is not None:
+            q = q.filter(Tenant.id != exclude_tenant_id)
+        if q.first():
+            raise ConflictError(f"Tenant with email '{em}' already exists")
+    if telephone and str(telephone).strip():
+        tel = str(telephone).strip()
+        q = db.query(Tenant).filter(Tenant.telephone == tel)
+        if exclude_tenant_id is not None:
+            q = q.filter(Tenant.id != exclude_tenant_id)
+        if q.first():
+            raise ConflictError(f"Tenant with telephone '{tel}' already exists")
+
+
 async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optional[UploadFile] = None):
     """Create a new tenant"""
     # Check if tenant already exists
@@ -29,6 +138,8 @@ async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optio
         existing_domain = db.query(Tenant).filter(Tenant.domain == tenant.domain).first()
         if existing_domain:
             raise ConflictError(f"Tenant with domain '{tenant.domain}' already exists")
+
+    _check_tenant_contact_uniqueness(db, email=tenant.email, telephone=tenant.telephone)
     
     # Check database mode - only create database if in multi-tenant mode
     from app.database.sessionManager import get_database_mode
@@ -43,22 +154,37 @@ async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optio
     
     new_tenant = Tenant(
         name=tenant.name,
+        region=str(tenant.region).strip(),
+        city=str(tenant.city).strip(),
+        neighbourhood=str(tenant.neighbourhood).strip(),
+        email=str(tenant.email).strip(),
+        telephone=str(tenant.telephone).strip(),
         category=tenant.category.upper(),  # Ensure uppercase (HI or SI)
         domain=tenant.domain,
         database_url=tenant_database_url,
         is_active=tenant.is_active if tenant.is_active is not None else True
     )
     
-    # Auto-set billing_type from subscription_plans table if subscription_plan is provided
     if tenant.subscription_plan:
-        from app.models.subscription_plan import SubscriptionPlan
-        plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.name == tenant.subscription_plan.strip()
-        ).first()
-        if plan:
-            new_tenant.billing_type = plan.billing_period
-            new_tenant.subscription_plan = tenant.subscription_plan.strip()
-    
+        plan_name = tenant.subscription_plan.strip()
+        new_tenant.subscription_plan = plan_name
+        resolved_billing = _resolve_billing_type_from_plan(db, plan_name)
+        if resolved_billing:
+            new_tenant.billing_type = resolved_billing
+
+    if tenant.billing_type and str(tenant.billing_type).strip():
+        new_tenant.billing_type = str(tenant.billing_type).strip()
+
+    started = _parse_optional_datetime_str(tenant.subscription_started_at)
+    if started:
+        new_tenant.subscription_started_at = started
+        if _is_premium_plan(tenant.subscription_plan):
+            new_tenant.payment_date = started
+    elif _is_premium_plan(tenant.subscription_plan):
+        now = datetime.datetime.utcnow()
+        new_tenant.subscription_started_at = now
+        new_tenant.payment_date = now
+
     db.add(new_tenant)
     db.commit()
     db.refresh(new_tenant)
@@ -127,11 +253,13 @@ async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optio
                 if admin_email:
                     run_async_safe(
                         EmailService.send_tenant_registration_email(
-                            tenant_name=tenant.name,
+                            tenant_name=new_tenant.name,
                             admin_email=admin_email,
                             admin_username=tenant.admin_username,
-                            admin_password=tenant.admin_password,  # Send plain password for first login
-                            domain=tenant.domain
+                            admin_password=tenant.admin_password,
+                            domain=new_tenant.domain,
+                            subscription_plan=new_tenant.subscription_plan,
+                            billing_type=new_tenant.billing_type,
                         )
                     )
         except Exception as e:
@@ -347,9 +475,12 @@ def _add_logo_url(db: Session, tenant: Tenant) -> Tenant:
 
 def _add_institution_contact(db: Session, tenant: Tenant) -> Tenant:
     """
-    Set tenant.email / tenant.phone for API responses (receipts, UI).
-    Prefer an active admin or super_admin; otherwise first active institution user.
+  Set tenant.phone for API responses when institution telephone is empty.
+  Preserve tenant.email / tenant.telephone from the tenants table (institution contact).
+  Fall back to an active admin user only when institution fields are not set.
     """
+    institution_email = (getattr(tenant, "email", None) or "").strip() or None
+    institution_phone = (getattr(tenant, "telephone", None) or "").strip() or None
     try:
         mode = get_database_mode()
         mode_norm = str(mode or "shared").lower().strip()
@@ -405,12 +536,12 @@ def _add_institution_contact(db: Session, tenant: Tenant) -> Tenant:
                 return em, ph
             return None, None
 
-        em, ph = pick_email_phone(users)
-        setattr(tenant, "email", em)
-        setattr(tenant, "phone", ph)
+        admin_em, admin_ph = pick_email_phone(users)
+        setattr(tenant, "email", institution_email or admin_em)
+        setattr(tenant, "phone", institution_phone or admin_ph)
     except Exception:
-        setattr(tenant, "email", None)
-        setattr(tenant, "phone", None)
+        setattr(tenant, "email", institution_email)
+        setattr(tenant, "phone", institution_phone)
     return tenant
 
 
@@ -503,6 +634,32 @@ async def update_tenant(
     update_data = {}
     if tenant_update.name is not None:
         update_data['name'] = tenant_update.name
+    if tenant_update.region is not None:
+        stripped = str(tenant_update.region).strip()
+        if stripped:
+            update_data['region'] = stripped
+    if tenant_update.city is not None:
+        stripped = str(tenant_update.city).strip()
+        if stripped:
+            update_data['city'] = stripped
+    if tenant_update.neighbourhood is not None:
+        stripped = str(tenant_update.neighbourhood).strip()
+        if stripped:
+            update_data['neighbourhood'] = stripped
+    if tenant_update.email is not None:
+        stripped = str(tenant_update.email).strip()
+        if stripped:
+            _check_tenant_contact_uniqueness(
+                db, email=stripped, exclude_tenant_id=tenant_id
+            )
+            update_data['email'] = stripped
+    if tenant_update.telephone is not None:
+        stripped = str(tenant_update.telephone).strip()
+        if stripped:
+            _check_tenant_contact_uniqueness(
+                db, telephone=stripped, exclude_tenant_id=tenant_id
+            )
+            update_data['telephone'] = stripped
     if tenant_update.category is not None:
         update_data['category'] = tenant_update.category.upper()
     if tenant_update.domain is not None:
@@ -534,6 +691,29 @@ async def update_tenant(
             ).first()
             if plan:
                 update_data["billing_type"] = plan.billing_period
+    if tenant_update.billing_type is not None:
+        stripped_billing = (tenant_update.billing_type or "").strip()
+        update_data["billing_type"] = stripped_billing if stripped_billing else None
+
+    if tenant_update.payment_date is not None:
+        from datetime import datetime
+
+        raw_payment = (tenant_update.payment_date or "").strip()
+        if not raw_payment:
+            update_data["payment_date"] = None
+        else:
+            try:
+                update_data["payment_date"] = datetime.fromisoformat(
+                    raw_payment.replace("Z", "+00:00")
+                )
+            except ValueError:
+                try:
+                    update_data["payment_date"] = datetime.strptime(raw_payment, "%Y-%m-%d")
+                except ValueError:
+                    raise ValidationError(
+                        "Invalid payment_date format. Use YYYY-MM-DD or ISO format."
+                    )
+
     if tenant_update.subscription_started_at is not None:
         from datetime import datetime
 
@@ -552,6 +732,20 @@ async def update_tenant(
                     raise ValidationError(
                         "Invalid subscription_started_at format. Use YYYY-MM-DD or ISO format."
                     )
+
+    if (
+        "subscription_started_at" in update_data
+        and update_data["subscription_started_at"]
+        and tenant_update.payment_date is None
+        and "payment_date" not in update_data
+    ):
+        plan_name = (
+            update_data.get("subscription_plan") or tenant.subscription_plan or ""
+        ).strip().lower()
+        if plan_name and _is_premium_plan(plan_name):
+            update_data["payment_date"] = update_data["subscription_started_at"]
+
+    _apply_premium_billing_defaults(db, tenant, update_data)
 
     # Update tenant fields - only update fields that are explicitly provided (not None)
     if update_data:

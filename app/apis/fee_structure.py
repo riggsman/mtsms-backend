@@ -87,10 +87,42 @@ def update_fee_structure(
     return fee_structure
 
 
+def get_installments_for_level(
+    db: Session,
+    tenant_id: int,
+    school_id: int,
+    level: str,
+) -> List[FeeInstallment]:
+    """Active fee installments for one school and program level (HND / DEGREE / MASTERS)."""
+    from sqlalchemy import case, func
+    from app.helpers.program_level import normalize_program_fee_level
+
+    level_norm = normalize_program_fee_level(level) or str(level).strip().upper()
+    if level_norm not in ("HND", "DEGREE", "MASTERS"):
+        return []
+
+    return (
+        db.query(FeeInstallment)
+        .filter(
+            FeeInstallment.tenant_id == tenant_id,
+            FeeInstallment.school_id == school_id,
+            func.upper(FeeInstallment.level) == level_norm,
+            FeeInstallment.is_active == True,
+        )
+        .order_by(
+            case((FeeInstallment.order_index == None, 1), else_=0),
+            FeeInstallment.order_index.asc(),
+            FeeInstallment.due_date.asc(),
+        )
+        .all()
+    )
+
+
 def get_installments(
     db: Session,
     tenant_id: int,
-    school_id: int = None
+    school_id: int = None,
+    level: str = None,
 ) -> List[FeeInstallment]:
     """Get all active installments for a tenant, optionally filtered by school_id"""
     from sqlalchemy import case
@@ -102,6 +134,14 @@ def get_installments(
     
     if school_id is not None:
         query = query.filter(FeeInstallment.school_id == school_id)
+
+    if level is not None:
+        from sqlalchemy import func
+        from app.helpers.program_level import normalize_program_fee_level
+
+        level_norm = normalize_program_fee_level(level) or str(level).strip().upper()
+        if level_norm in ("HND", "DEGREE", "MASTERS"):
+            query = query.filter(func.upper(FeeInstallment.level) == level_norm)
     
     # MySQL-compatible NULL handling (NULLS LAST equivalent)
     installments = query.order_by(

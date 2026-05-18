@@ -27,6 +27,7 @@ from app.routes import (
     system_settings,
     subscription_services,
     service_configurations,
+    feature_matrix,
     subscription_plans,
     uploads,
     departments,
@@ -41,13 +42,16 @@ from app.routes import (
     specializations,
     payroll,
     student_dashboard,
+    staff_dashboard,
     leave_requests,
     utility_requests,
     notifications,
     academic_year_management,
+    academic_calendar,
     promotions,
     hr,
     correspondence,
+    parent_portal,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from app.conf.config import settings
@@ -90,6 +94,17 @@ except Exception as e:
 
 # Export for uvicorn
 # Use: uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+
+from app.middleware.analytics_middleware import analytics_middleware as platform_analytics_middleware
+from app.middleware.platform_error_handlers import register_platform_error_handlers
+
+register_platform_error_handlers(app)
+
+
+@app.middleware("http")
+async def platform_analytics_http_middleware(request: Request, call_next):
+    return await platform_analytics_middleware(request, call_next)
+
 
 # CORS middleware - handle OPTIONS before any other processing
 @app.middleware("http")
@@ -194,6 +209,12 @@ app.include_router(
     tags=["service-configurations"],
 )
 
+app.include_router(
+    feature_matrix.feature_matrix,
+    prefix="/api/v1",
+    tags=["feature-matrix"],
+)
+
 # Subscription plans routes
 app.include_router(
     subscription_plans.router,
@@ -223,6 +244,7 @@ app.include_router(certificates.certificate_router, prefix="/api/v1", tags=["cer
 
 app.include_router(payroll.router, prefix="/api/v1", tags=["payroll"])
 app.include_router(student_dashboard.router, prefix="/api/v1", tags=["student-dashboard"])
+app.include_router(staff_dashboard.router, prefix="/api/v1", tags=["staff-dashboard"])
 
 # Request management routes
 app.include_router(leave_requests.leave_router, prefix="/api/v1", tags=["leave-requests"])
@@ -237,6 +259,11 @@ app.include_router(
     academic_year_management.academic_year_router,
     prefix="/api/v1",
     tags=["academic-years"],
+)
+app.include_router(
+    academic_calendar.academic_calendar_router,
+    prefix="/api/v1",
+    tags=["academic-calendar"],
 )
 app.include_router(
     promotions.promotions_router,
@@ -256,6 +283,12 @@ app.include_router(
     tags=["correspondence"],
 )
 
+app.include_router(
+    parent_portal.router,
+    prefix="/api/v1",
+    tags=["parent-portal"],
+)
+
 # Import models to register them with metadata for table creation
 from app.models.school import School, SchoolFee
 from app.models.fee_structure import FeeStructure, FeeInstallment
@@ -265,17 +298,29 @@ from app.models.user_push_token import UserPushToken  # noqa: F401 — register 
 from app.models.student_year_outcome import StudentYearOutcome  # noqa: F401 — register tenant metadata
 from app.models.student_promotion_history import StudentPromotionHistory  # noqa: F401 — register tenant metadata
 from app.models.student_course_rank import StudentCourseRank  # noqa: F401 — register tenant metadata
+from app.models.academic_calendar import AcademicCalendar  # noqa: F401 — register tenant metadata
 from app.models.staff_document import StaffDocument  # noqa: F401
 from app.models.staff_attendance import StaffAttendance  # noqa: F401
 from app.models.communication import Communication  # noqa: F401
 from app.models.communication_template import CommunicationTemplate  # noqa: F401
 from app.models.circular import Circular  # noqa: F401
+from app.models.student_attendance_entry import StudentAttendanceEntry  # noqa: F401
+from app.models.student_chat import StudentChatThread, StudentChatMessage  # noqa: F401
+from app.models.platform_analytics import (  # noqa: F401
+    LoginAuditEvent,
+    OtpAuditEvent,
+    PlatformEmailEvent,
+    PlatformErrorEvent,
+    ApiRequestLog,
+)
 
 # Create metadata database tables (if they don't exist)
 @app.on_event("startup")
 def startup():
     DefaultBase.metadata.create_all(bind=engine)
     BaseModel_Base.metadata.create_all(bind=engine)
+    from app.database.schema_patches import ensure_schema_patches
+    ensure_schema_patches(engine)
     # Seed default data
     with DefaultSessionLocal() as session:
         run_startup_seed(session)
@@ -286,6 +331,10 @@ def startup():
         from app.tasks.schedule_reminder_task import start_schedule_reminder_scheduler
         print("SYSTEM ADMIN PASSWORD ", hash_password("admin123"))  # Example usage of hash_password to ensure it's working
         start_schedule_reminder_scheduler()
+        from app.tasks.tenant_billing_reminder_task import (
+            start_tenant_billing_reminder_scheduler,
+        )
+        start_tenant_billing_reminder_scheduler()
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
@@ -296,7 +345,11 @@ def shutdown():
     """Stop background tasks on shutdown"""
     try:
         from app.tasks.schedule_reminder_task import stop_schedule_reminder_scheduler
+        from app.tasks.tenant_billing_reminder_task import (
+            stop_tenant_billing_reminder_scheduler,
+        )
         stop_schedule_reminder_scheduler()
+        stop_tenant_billing_reminder_scheduler()
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)

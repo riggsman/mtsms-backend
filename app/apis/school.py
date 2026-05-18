@@ -6,6 +6,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.models.school import School, SchoolFee
+from app.models.academic_year import AcademicYear
 from app.schemas.school import (
     SchoolCreate,
     SchoolUpdate,
@@ -88,17 +89,102 @@ def delete_school(db: Session, school_id: int, institution_id: int) -> bool:
 VALID_LEVELS = ["HND", "DEGREE", "MASTERS"]
 
 
-def get_school_fees(db: Session, school_id: int, institution_id: int, level: str = None) -> List[SchoolFee]:
-    """Get fees for a school, optionally filtered by fee level"""
-    # Verify school access
+def get_academic_year_name(db: Session, institution_id: int, academic_year_id: Optional[int]) -> Optional[str]:
+    if not academic_year_id:
+        return None
+    row = (
+        db.query(AcademicYear)
+        .filter(
+            AcademicYear.id == academic_year_id,
+            AcademicYear.institution_id == institution_id,
+            AcademicYear.deleted_at.is_(None),
+        )
+        .first()
+    )
+    return row.name if row else None
+
+
+def _parse_date_string(value: Optional[str]):
+    if not value:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(s[:19] if "T" in s else s, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def get_academic_year_date_bounds(
+    db: Session, institution_id: int, academic_year_id: Optional[int]
+):
+    """Return (start, end) datetimes for an academic year, or (None, None)."""
+    if not academic_year_id:
+        return None, None
+    row = (
+        db.query(AcademicYear)
+        .filter(
+            AcademicYear.id == academic_year_id,
+            AcademicYear.institution_id == institution_id,
+            AcademicYear.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not row:
+        return None, None
+    start = _parse_date_string(row.start_date)
+    end = _parse_date_string(row.end_date)
+    if start:
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    if end:
+        end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return start, end
+
+
+def get_current_academic_year_id(db: Session, institution_id: int) -> Optional[int]:
+    row = (
+        db.query(AcademicYear)
+        .filter(
+            AcademicYear.institution_id == institution_id,
+            AcademicYear.is_current.is_(True),
+            AcademicYear.deleted_at.is_(None),
+        )
+        .first()
+    )
+    return row.id if row else None
+
+
+def school_fee_response(fee: SchoolFee, db: Session, institution_id: int) -> SchoolFeeResponse:
+    ay_name = get_academic_year_name(db, institution_id, getattr(fee, "academic_year_id", None))
+    return SchoolFeeResponse.from_model(fee, academic_year_name=ay_name)
+
+
+def get_school_fees(
+    db: Session,
+    school_id: int,
+    institution_id: int,
+    level: str = None,
+    academic_year_id: Optional[int] = None,
+) -> List[SchoolFee]:
+    """Get fees for a school, optionally filtered by fee level and academic year"""
+    from app.database.schema_patches import ensure_schema_patches
+    ensure_schema_patches(db.get_bind())
+
     get_school_by_id(db, school_id, institution_id)
-    
+
     query = db.query(SchoolFee).filter(SchoolFee.school_id == school_id)
     if level:
         query = query.filter(SchoolFee.level == level.upper().strip())
-    
-    fees = query.order_by(SchoolFee.level).all()
-    return fees
+    if academic_year_id is not None:
+        query = query.filter(SchoolFee.academic_year_id == academic_year_id)
+
+    return query.order_by(SchoolFee.level).all()
 
 
 def get_school_fee_by_id(db: Session, fee_id: int, institution_id: int) -> SchoolFee:
@@ -113,17 +199,35 @@ def get_school_fee_by_id(db: Session, fee_id: int, institution_id: int) -> Schoo
     return fee
 
 
-def get_school_fee_by_level(db: Session, school_id: int, level: str, institution_id: int) -> Optional[SchoolFee]:
-    """Get fee for a specific school + level combination"""
-    # Verify school access
+def get_school_fee_by_level(
+    db: Session,
+    school_id: int,
+    level: str,
+    institution_id: int,
+    academic_year_id: Optional[int] = None,
+) -> Optional[SchoolFee]:
+    """Get fee for school + level, preferring the requested academic year then current then legacy default."""
     get_school_by_id(db, school_id, institution_id)
-    
-    fee = db.query(SchoolFee).filter(
+    level_norm = level.upper().strip()
+    base = db.query(SchoolFee).filter(
         SchoolFee.school_id == school_id,
-        SchoolFee.level == level.upper()
-    ).first()
-    
-    return fee
+        SchoolFee.level == level_norm,
+    )
+
+    ids_to_try: List[int] = []
+    if academic_year_id:
+        ids_to_try.append(int(academic_year_id))
+    else:
+        current_id = get_current_academic_year_id(db, institution_id)
+        if current_id:
+            ids_to_try.append(current_id)
+
+    for aid in ids_to_try:
+        fee = base.filter(SchoolFee.academic_year_id == aid).first()
+        if fee:
+            return fee
+
+    return base.filter(SchoolFee.academic_year_id.is_(None)).first()
 
 
 def create_or_update_school_fee(
@@ -152,23 +256,32 @@ def create_or_update_school_fee(
             except ValueError:
                 raise ValidationError("Invalid fee_deadline format. Use YYYY-MM-DD")
     
-    # Check if fee already exists for this school + level
-    existing = get_school_fee_by_level(db, school_id, level, institution_id)
-    
+    academic_year_id = getattr(fee_data, "academic_year_id", None)
+    query = db.query(SchoolFee).filter(
+        SchoolFee.school_id == school_id,
+        SchoolFee.level == level,
+    )
+    if academic_year_id is not None:
+        query = query.filter(SchoolFee.academic_year_id == academic_year_id)
+    else:
+        query = query.filter(SchoolFee.academic_year_id.is_(None))
+    existing = query.first()
+
     if existing:
-        # Update existing
         existing.fee_amount = fee_data.fee_amount
         existing.fee_deadline = deadline
+        if academic_year_id is not None:
+            existing.academic_year_id = academic_year_id
         db.commit()
         db.refresh(existing)
         return existing
     else:
-        # Create new
         fee = SchoolFee(
             school_id=school_id,
             level=level,
+            academic_year_id=academic_year_id,
             fee_amount=fee_data.fee_amount,
-            fee_deadline=deadline
+            fee_deadline=deadline,
         )
         db.add(fee)
         db.commit()
@@ -214,8 +327,9 @@ def get_all_schools_with_fees(db: Session, institution_id: int) -> List[dict]:
     """Get all schools with their fees for an institution"""
     schools = get_schools(db, institution_id)
     result = []
-    
+
     for school in schools:
+        fees = get_school_fees(db, school.id, institution_id)
         school_dict = {
             "id": school.id,
             "institution_id": school.institution_id,
@@ -224,10 +338,10 @@ def get_all_schools_with_fees(db: Session, institution_id: int) -> List[dict]:
             "description": school.description,
             "is_active": school.is_active,
             "sort_order": school.sort_order,
-            "fees": [SchoolFeeResponse.from_model(f) for f in school.fees],
+            "fees": [school_fee_response(f, db, institution_id) for f in fees],
             "created_at": school.created_at,
-            "updated_at": school.updated_at
+            "updated_at": school.updated_at,
         }
         result.append(school_dict)
-    
+
     return result

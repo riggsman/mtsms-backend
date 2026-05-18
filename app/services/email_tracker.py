@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from app.repositories.email_repository import EmailRepository
 from app.services.email_service import EmailService
+from app.services.analytics_service import record_platform_email_event
 from app.conf.config import settings
 import logging
 from typing import Optional, Dict, Any
@@ -22,7 +23,8 @@ class EmailTracker:
         html_content: str,
         text_content: Optional[str] = None,
         institution_id: Optional[int] = None,
-        from_name: Optional[str] = None
+        from_name: Optional[str] = None,
+        email_category: Optional[str] = "general",
     ) -> Dict[str, Any]:
         """
         Send email with tracking and retry logic
@@ -47,34 +49,42 @@ class EmailTracker:
         # Retry logic
         while retry_count < EmailTracker.MAX_RETRY:
             try:
-                # Send email
-                success = await EmailService.send_email(
+                success, send_error = await EmailService.send_email_detailed(
                     to_email=recipient_email,
                     subject=subject,
                     html_content=html_content,
                     text_content=text_content,
                     from_email=sender_email,
-                    from_name=from_name
+                    from_name=from_name,
                 )
-                
+
                 if success:
-                    # Generate a provider message ID (since SMTP doesn't return one)
-                    # In production, use actual provider message ID from SendGrid/Mailgun/etc.
                     provider_message_id = f"msg_{uuid.uuid4().hex[:16]}"
                     status = "SENT"
                     failure_reason = None
                     break
-                else:
-                    retry_count += 1
-                    failure_reason = "Email service returned False"
-                    if retry_count < EmailTracker.MAX_RETRY:
-                        logger.warning(f"Email send failed, retrying ({retry_count}/{EmailTracker.MAX_RETRY})")
-                    
+
+                retry_count += 1
+                failure_reason = send_error or "Email service returned failure"
+                if retry_count < EmailTracker.MAX_RETRY:
+                    logger.warning(
+                        "Email send failed (%s), retrying (%s/%s): %s",
+                        failure_reason,
+                        retry_count,
+                        EmailTracker.MAX_RETRY,
+                        recipient_email,
+                    )
+
             except Exception as error:
                 retry_count += 1
                 failure_reason = str(error)
-                logger.error(f"Error sending email (attempt {retry_count}/{EmailTracker.MAX_RETRY}): {error}")
-                
+                logger.error(
+                    "Error sending email (attempt %s/%s): %s",
+                    retry_count,
+                    EmailTracker.MAX_RETRY,
+                    error,
+                )
+
                 if retry_count >= EmailTracker.MAX_RETRY:
                     logger.error(f"Max retries reached for email to {recipient_email}")
         
@@ -88,6 +98,15 @@ class EmailTracker:
             retry_count=retry_count
         )
         
+        record_platform_email_event(
+            tenant_id=institution_id,
+            recipient_email=recipient_email,
+            subject=subject,
+            status=status,
+            failure_reason=failure_reason,
+            email_category=email_category,
+        )
+
         return {
             "success": status == "SENT",
             "status": status,

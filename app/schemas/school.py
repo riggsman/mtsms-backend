@@ -66,11 +66,13 @@ class SchoolFeeCreate(BaseModel):
     level: str
     fee_amount: float
     fee_deadline: Optional[str] = None
+    academic_year_id: Optional[int] = Field(None, description="Academic year for this fee row")
 
 
 class SchoolFeeUpdate(BaseModel):
     fee_amount: Optional[float] = Field(None, ge=0)
     fee_deadline: Optional[str] = None
+    academic_year_id: Optional[int] = None
 
 
 class SchoolFeeResponse(BaseModel):
@@ -79,6 +81,8 @@ class SchoolFeeResponse(BaseModel):
     school_name: Optional[str] = None
     school_code: Optional[str] = None
     level: str
+    academic_year_id: Optional[int] = None
+    academic_year_name: Optional[str] = None
     fee_amount: float
     fee_deadline: Optional[datetime] = None
     fee_deadline_formatted: Optional[str] = None
@@ -89,7 +93,7 @@ class SchoolFeeResponse(BaseModel):
         from_attributes = True
 
     @classmethod
-    def from_model(cls, fee):
+    def from_model(cls, fee, academic_year_name: Optional[str] = None):
         deadline_str = fee.fee_deadline.strftime('%Y-%m-%d') if fee.fee_deadline else None
         school_name = None
         school_code = None
@@ -102,6 +106,8 @@ class SchoolFeeResponse(BaseModel):
             school_name=school_name,
             school_code=school_code,
             level=fee.level,
+            academic_year_id=getattr(fee, "academic_year_id", None),
+            academic_year_name=academic_year_name,
             fee_amount=float(fee.fee_amount),
             fee_deadline=fee.fee_deadline,
             fee_deadline_formatted=deadline_str,

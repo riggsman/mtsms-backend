@@ -89,6 +89,11 @@ async def create_tenant(
             
             # Extract form fields
             name = form_data.get("name")
+            region = form_data.get("region")
+            city = form_data.get("city")
+            neighbourhood = form_data.get("neighbourhood")
+            email = form_data.get("email")
+            telephone = form_data.get("telephone")
             category = form_data.get("category")
             domain = form_data.get("domain")
             database_name = form_data.get("database_name")
@@ -98,7 +103,9 @@ async def create_tenant(
             must_change_password = form_data.get("must_change_password")
             branches_enabled = form_data.get("branches_enabled")
             initial_branch_name = form_data.get("initial_branch_name")
-            initial_branch_name = form_data.get("initial_branch_name")
+            subscription_plan = form_data.get("subscription_plan")
+            subscription_started_at = form_data.get("subscription_started_at")
+            billing_type = form_data.get("billing_type")
             
             # Get logo file if provided
             if "logo" in form_data:
@@ -132,9 +139,29 @@ async def create_tenant(
                 else:
                     branches_enabled_bool = bool(branches_enabled)
             
-            # Create TenantRequest object
+            subscription_plan_str = (
+                str(subscription_plan).strip()
+                if subscription_plan and str(subscription_plan).strip()
+                else None
+            )
+            subscription_started_str = (
+                str(subscription_started_at).strip()
+                if subscription_started_at and str(subscription_started_at).strip()
+                else None
+            )
+            billing_type_str = (
+                str(billing_type).strip()
+                if billing_type and str(billing_type).strip()
+                else None
+            )
+
             tenant_request = TenantRequest(
                 name=name if name else "",
+                region=str(region).strip() if region else "",
+                city=str(city).strip() if city else "",
+                neighbourhood=str(neighbourhood).strip() if neighbourhood else "",
+                email=str(email).strip() if email else "",
+                telephone=str(telephone).strip() if telephone else "",
                 category=category.upper() if category else "HI",
                 domain=domain if domain and str(domain).strip() else None,
                 database_name=database_name if database_name and str(database_name).strip() else None,
@@ -143,7 +170,10 @@ async def create_tenant(
                 initial_branch_name=initial_branch_name if initial_branch_name and str(initial_branch_name).strip() else None,
                 admin_username=admin_username if admin_username and str(admin_username).strip() else None,
                 admin_password=admin_password if admin_password and str(admin_password).strip() else None,
-                must_change_password=must_change_password_bool if must_change_password_bool is not None else False
+                must_change_password=must_change_password_bool if must_change_password_bool is not None else False,
+                subscription_plan=subscription_plan_str,
+                subscription_started_at=subscription_started_str,
+                billing_type=billing_type_str,
             )
         except Exception as e:
             raise HTTPException(
@@ -198,7 +228,7 @@ async def list_tenants(
     skip = (page - 1) * page_size
     tenants, total = get_all_tenants(db=db, skip=skip, limit=page_size)
     return PaginatedResponse.create(
-        items=tenants,
+        items=[TenantResponse.model_validate(t, from_attributes=True) for t in tenants],
         total=total,
         page=page,
         page_size=page_size
@@ -344,6 +374,11 @@ async def update_tenant_endpoint(
             
             # Extract form fields
             name = form_data.get("name")
+            region = form_data.get("region")
+            city = form_data.get("city")
+            neighbourhood = form_data.get("neighbourhood")
+            email = form_data.get("email")
+            telephone = form_data.get("telephone")
             category = form_data.get("category")
             domain = form_data.get("domain")
             is_active = form_data.get("is_active")
@@ -356,6 +391,7 @@ async def update_tenant_endpoint(
             fee_deadline = form_data.get("fee_deadline")
             subscription_plan = form_data.get("subscription_plan")
             subscription_started_at = form_data.get("subscription_started_at")
+            billing_type = form_data.get("billing_type")
             # Get logo file if provided
             logo_file = None
             if "logo" in form_data:
@@ -409,10 +445,19 @@ async def update_tenant_endpoint(
                 if subscription_started_at and str(subscription_started_at).strip()
                 else None
             )
+            billing_type_str = (
+                str(billing_type).strip()
+                if billing_type and str(billing_type).strip()
+                else None
+            )
 
-            # Only set fields that are not None and not empty strings
             tenant_update = TenantUpdate(
                 name=name if name and str(name).strip() else None,
+                region=region if region and str(region).strip() else None,
+                city=city if city and str(city).strip() else None,
+                neighbourhood=neighbourhood if neighbourhood and str(neighbourhood).strip() else None,
+                email=email if email and str(email).strip() else None,
+                telephone=telephone if telephone and str(telephone).strip() else None,
                 category=category if category and str(category).strip() else None,
                 domain=domain if domain and str(domain).strip() else None,
                 is_active=is_active_bool,
@@ -425,6 +470,7 @@ async def update_tenant_endpoint(
                 fee_deadline=fee_deadline_str,
                 subscription_plan=subscription_plan_str,
                 subscription_started_at=subscription_started_str,
+                billing_type=billing_type_str,
             )
            
         except Exception as e:

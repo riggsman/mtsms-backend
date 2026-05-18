@@ -24,29 +24,40 @@ class EmailService:
         from_email: Optional[str] = None,
         from_name: Optional[str] = None
     ) -> bool:
+        success, _ = await EmailService.send_email_detailed(
+            to_email=to_email,
+            subject=subject,
+            html_content=html_content,
+            text_content=text_content,
+            from_email=from_email,
+            from_name=from_name,
+        )
+        return success
+
+    @staticmethod
+    async def send_email_detailed(
+        to_email: str,
+        subject: str,
+        html_content: str,
+        text_content: Optional[str] = None,
+        from_email: Optional[str] = None,
+        from_name: Optional[str] = None,
+    ) -> tuple[bool, Optional[str]]:
         """
-        Send an email asynchronously
-        
-        Args:
-            to_email: Recipient email address
-            subject: Email subject
-            html_content: HTML email content
-            text_content: Plain text email content (optional)
-            from_email: Sender email (defaults to SMTP_FROM_EMAIL)
-            from_name: Sender name (defaults to SMTP_FROM_NAME)
-        
+        Send an email asynchronously.
+
         Returns:
-            bool: True if email sent successfully, False otherwise
+            (success, error_message) — error_message is set when success is False.
         """
-        # Check if email is enabled
         if not settings.EMAIL_ENABLED:
-            logger.info(f"Email sending is disabled. Would send to {to_email}: {subject}")
-            return False
-        
-        # Validate email configuration
+            msg = "Email sending is disabled"
+            logger.info(f"{msg}. Would send to {to_email}: {subject}")
+            return False, msg
+
         if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
-            logger.warning("SMTP credentials not configured. Email not sent.")
-            return False
+            msg = "SMTP credentials not configured"
+            logger.warning(f"{msg}. Email not sent.")
+            return False, msg
         
         try:
             # Create message
@@ -93,11 +104,12 @@ class EmailService:
                     await smtp.send_message(message)
             
             logger.info(f"Email sent successfully to {to_email}: {subject}")
-            return True
-            
+            return True, None
+
         except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {str(e)}")
-            return False
+            err = str(e)
+            logger.error(f"Failed to send email to {to_email}: {err}")
+            return False, err
     
     @staticmethod
     async def send_tenant_registration_email(
@@ -105,12 +117,21 @@ class EmailService:
         admin_email: str,
         admin_username: str,
         admin_password: str,
-        domain: Optional[str] = None
+        domain: Optional[str] = None,
+        subscription_plan: Optional[str] = None,
+        billing_type: Optional[str] = None,
     ) -> bool:
         """Send email to tenant admin after registration"""
         subject = f"Welcome to {settings.APP_NAME} - Tenant Registration Complete"
         
         login_url = f"https://{domain}" if domain else "https://your-domain.com"
+        plan_block = ""
+        if subscription_plan:
+            billing_label = (billing_type or "monthly").capitalize()
+            plan_block = f"""
+                    <p><strong>Subscription plan:</strong> {subscription_plan}</p>
+                    <p><strong>Billing cycle:</strong> {billing_label}</p>
+            """
         
         html_content = f"""
         <!DOCTYPE html>
@@ -134,7 +155,7 @@ class EmailService:
                 <div class="content">
                     <p>Dear Administrator,</p>
                     <p>Your tenant account <strong>{tenant_name}</strong> has been successfully registered.</p>
-                    
+                    {plan_block}
                     <div class="credentials">
                         <h3>Your Login Credentials:</h3>
                         <p><strong>Username:</strong> {admin_username}</p>
@@ -179,6 +200,74 @@ class EmailService:
             html_content=html_content,
             text_content=text_content,
             from_name=settings.APP_NAME
+        )
+
+    @staticmethod
+    async def send_tenant_billing_reminder_email(
+        tenant_name: str,
+        admin_email: str,
+        billing_due_date: str,
+        days_remaining: int,
+        subscription_plan: Optional[str] = None,
+        billing_type: Optional[str] = None,
+        amount_label: Optional[str] = None,
+    ) -> bool:
+        """Remind tenant admin that subscription billing is due in N days."""
+        subject = f"{settings.APP_NAME} — Subscription billing due in {days_remaining} days"
+        plan_line = subscription_plan or "Premium"
+        billing_line = (billing_type or "monthly").capitalize()
+        amount_line = amount_label or "See your subscription plan"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #1565c0; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .highlight {{ background-color: #fff; padding: 15px; border-left: 4px solid #1565c0; margin: 20px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header"><h1>Billing reminder</h1></div>
+                <div class="content">
+                    <p>Dear Administrator,</p>
+                    <p>This is a reminder that the subscription for <strong>{tenant_name}</strong>
+                    will be due for billing in <strong>{days_remaining} days</strong>
+                    (due date: <strong>{billing_due_date}</strong>).</p>
+                    <div class="highlight">
+                        <p><strong>Plan:</strong> {plan_line}</p>
+                        <p><strong>Billing cycle:</strong> {billing_line}</p>
+                        <p><strong>Amount:</strong> {amount_line}</p>
+                    </div>
+                    <p>Please ensure payment is arranged before the due date to avoid service interruption.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+        Billing reminder — {settings.APP_NAME}
+
+        Tenant: {tenant_name}
+        Due date: {billing_due_date} ({days_remaining} days from today)
+        Plan: {plan_line}
+        Billing cycle: {billing_line}
+        Amount: {amount_line}
+
+        Please ensure payment is arranged before the due date.
+        """
+
+        return await EmailService.send_email(
+            to_email=admin_email,
+            subject=subject,
+            html_content=html_content,
+            text_content=text_content,
+            from_name=settings.APP_NAME,
         )
     
     @staticmethod
@@ -272,7 +361,46 @@ class EmailService:
             text_content=text_content,
             from_name=institution_name or settings.APP_NAME
         )
-    
+
+    @staticmethod
+    async def send_parent_portal_welcome_email(
+        parent_name: str,
+        parent_email: str,
+        username: str,
+        password: str,
+        institution_name: Optional[str] = None,
+    ) -> bool:
+        """Notify guardian that a parent portal login was created (same email as admission)."""
+        app_label = institution_name or settings.APP_NAME
+        subject = f"{app_label} - Parent portal access"
+        html_content = f"""
+        <!DOCTYPE html>
+        <html><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <p>Dear {parent_name},</p>
+        <p>An online parent account has been created for you at <strong>{app_label}</strong> so you can follow your child&apos;s progress.</p>
+        <p><strong>Sign in with your email:</strong> {parent_email}<br/>
+        <strong>Username (if needed):</strong> {username}<br/>
+        <strong>Temporary password:</strong> {password}</p>
+        <p>You will be asked to change this password after your first login.</p>
+        <p>Open your school&apos;s login page, enter your <strong>school domain</strong> and use the email above as your login identifier together with the password.</p>
+        <p>If you did not expect this message, contact the school administration.</p>
+        <p style="font-size:12px;color:#666;">This is an automated message from {app_label}.</p>
+        </body></html>
+        """
+        text_content = (
+            f"Dear {parent_name},\n\n"
+            f"A parent portal account was created at {app_label}.\n"
+            f"Email (login): {parent_email}\nUsername: {username}\nTemporary password: {password}\n\n"
+            "You must change this password after your first login.\n"
+        )
+        return await EmailService.send_email(
+            to_email=parent_email,
+            subject=subject,
+            html_content=html_content,
+            text_content=text_content,
+            from_name=app_label,
+        )
+
     @staticmethod
     async def _get_lecturer_registration_email_content(
         lecturer_name: str,

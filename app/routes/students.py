@@ -16,6 +16,7 @@ from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
 from app.helpers.branch_scope import effective_branch_scope_id
 from app.helpers.user_roles import user_has_role, user_is_system_admin, user_requires_tenant_scope_for_data
+from app.helpers.program_level import resolve_program_fee_level
 
 student = APIRouter()
 
@@ -24,6 +25,7 @@ student = APIRouter()
 
 @student.get("/students/me/program-fee", response_model=SchoolFeeResponse)
 def get_current_student_program_fee(
+    academic_year_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
@@ -47,20 +49,29 @@ def get_current_student_program_fee(
             detail="Student record not found for current user"
         )
 
-    if not student.school_id or not student.level:
+    program_level = resolve_program_fee_level(student)
+    if not student.school_id or not program_level:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Student must have school and level assigned to retrieve program fee"
+            detail="Student must have school and program level (HND, DEGREE, or MASTERS) assigned to retrieve program fee"
         )
 
-    fee = get_school_fee_by_level(db, student.school_id, student.level, current_user.institution_id)
+    effective_year_id = academic_year_id or student.academic_year_id
+    fee = get_school_fee_by_level(
+        db,
+        student.school_id,
+        program_level,
+        current_user.institution_id,
+        academic_year_id=effective_year_id,
+    )
     if not fee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Program fee not configured for your school and level"
+            detail="Program fee not configured for your school, level, and academic year"
         )
 
-    return SchoolFeeResponse.from_model(fee)
+    from app.apis.school import school_fee_response
+    return school_fee_response(fee, db, current_user.institution_id)
 
 @student.get("/students/me", response_model=StudentResponse)
 def get_current_student(

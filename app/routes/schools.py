@@ -2,7 +2,7 @@
 School Routes - FastAPI endpoints for schools and school fees
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.dependencies.tenantDependency import get_db
@@ -35,7 +35,8 @@ from app.apis.school import (
     create_or_update_school_fee,
     update_school_fee,
     delete_school_fee,
-    get_all_schools_with_fees
+    get_all_schools_with_fees,
+    school_fee_response,
 )
 from app.apis.fee_structure import (
     get_installments,
@@ -199,7 +200,7 @@ def get_school_endpoint(
         "description": school.description,
         "is_active": school.is_active,
         "sort_order": school.sort_order,
-        "fees": [SchoolFeeResponse.from_model(f) for f in fees],
+        "fees": [school_fee_response(f, db, institution_id) for f in fees],
         "created_at": school.created_at,
         "updated_at": school.updated_at
     }
@@ -238,13 +239,15 @@ def delete_school_endpoint(
 def list_school_fees(
     school_id: int,
     level: Optional[str] = None,
+    academic_year_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
-    """Get fees for a school, optionally filtered by level"""
+    """Get fees for a school, optionally filtered by level and academic year"""
     institution_id = require_institution(current_user)
-    fees = get_school_fees(db, school_id, institution_id, level)
-    return [SchoolFeeResponse.from_model(f) for f in fees]
+    from app.apis.school import school_fee_response
+    fees = get_school_fees(db, school_id, institution_id, level, academic_year_id=academic_year_id)
+    return [school_fee_response(f, db, institution_id) for f in fees]
 
 
 @router.post("/schools/{school_id}/fees", response_model=SchoolFeeResponse, status_code=201)
@@ -322,11 +325,12 @@ def bulk_create_fees(
 @router.get("/schools/{school_id}/installments", response_model=List[FeeInstallmentResponse])
 def list_school_installments(
     school_id: int,
+    level: Optional[str] = Query(None, description="Filter by program level: HND, DEGREE, MASTERS"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
 ):
     """
-    Get all active installments for a specific school.
+    Get active installments for a specific school, optionally filtered by program level.
     """
     institution_id = require_institution(current_user)
     # Verify school belongs to institution
@@ -334,7 +338,7 @@ def list_school_installments(
     if not school:
         raise HTTPException(status_code=404, detail="School not found")
     
-    installments = get_installments(db, institution_id, school_id)
+    installments = get_installments(db, institution_id, school_id, level=level)
     return [FeeInstallmentResponse.from_installment(i) for i in installments]
 
 

@@ -15,6 +15,7 @@ from app.database.base import get_db_session, DefaultSessionLocal
 
 get_db = get_db_session
 from app.helpers.formater import Format_Helper
+from app.helpers.mysql_connection import build_tenant_database_url, get_mysql_params
 from app.models.tenant import Tenant
 from app.models.system_config import SystemConfig
 
@@ -53,14 +54,17 @@ def create_engine_with_retry(url, max_retries=10, retry_interval=3):
                 raise
 
 
-async def create_tenant_database(db_name, user:str | None ="root", password:str | None =""):
+async def create_tenant_database(db_name, user: str | None = None, password: str | None = None):
     try:
-        # Connect to MySQL Server
-        host="localhost"
+        params = get_mysql_params()
+        host = params["host"]
+        user = user if user is not None else params["user"]
+        password = password if password is not None else params["password"]
         connection = mysql.connector.connect(
             host=host,
+            port=params["port"],
             user=user,
-            password=password
+            password=password,
         )
 
         cursor = connection.cursor()
@@ -70,14 +74,14 @@ async def create_tenant_database(db_name, user:str | None ="root", password:str 
         cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{tenant_db_name}`")
         print(f"Database '{tenant_db_name}' created successfully.")
 
-        engine = create_engine_with_retry(f"mysql+pymysql://{user}:{password}@{host}/{tenant_db_name}")
+        engine = create_engine_with_retry(build_tenant_database_url(tenant_db_name))
         BaseModel_Base.metadata.create_all(bind=engine)
 
         cursor.close()
         connection.close()
-        print(f"mysql+pymysql://{user}:{password}@{host}/{tenant_db_name}")
-        # # Return the new database connection URL
-        return f"mysql+pymysql://{user}:{password}@{host}/{tenant_db_name}"
+        url = build_tenant_database_url(tenant_db_name)
+        print(url)
+        return url
 
     except Error as e:
         print("Error while connecting to MySQL:", e)
@@ -177,7 +181,7 @@ def get_tenant_db(tenant_name: str):
     try:
         tenant_db_name = Format_Helper(tenant_name).replace_space_with_underscore()
         # Create a new engine for the tenant
-        engine = create_engine_with_retry(f"mysql+pymysql://root:@localhost/{tenant_db_name}")
+        engine = create_engine_with_retry(build_tenant_database_url(tenant_db_name))
         print(f"Created new engine for tenant '{tenant_db_name}'")
 
         # Create a sessionmaker for the tenant

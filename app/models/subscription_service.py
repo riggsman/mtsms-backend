@@ -12,6 +12,7 @@ class SubscriptionService(DefaultBase):
     __tablename__ = "subscription_services"
 
     id = Column(Integer, primary_key=True)
+    button_id = Column(String(120), nullable=True, unique=True, index=True)
     name = Column(String(200), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     price = Column(Numeric(10, 2), nullable=False)

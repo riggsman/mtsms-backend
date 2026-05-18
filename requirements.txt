@@ -25,3 +25,4 @@ python-socketio[client]
 # mysql
 firebase-admin
 python-dateutil
+openpyxl

@@ -16,7 +16,7 @@ from app.models.system_config import SystemConfig
 from app.models.system_settings import SystemSettings
 from fastapi import HTTPException, status
 from datetime import datetime, timedelta
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 
 from app.routes.system_settings import _get_or_create_singleton
 from app.schemas.system_settings import FirebaseMessagingConfig, SystemSettingsRequest
@@ -59,6 +59,15 @@ async def get_system_stats(
     
     # Get active tenants
     active_tenants = db.query(Tenant).filter(Tenant.is_active == True).count()
+
+    # Suspended tenants (inactive with suspension metadata)
+    suspended_tenants = db.query(Tenant).filter(
+        Tenant.is_active == False,
+        or_(
+            Tenant.suspended_at.isnot(None),
+            Tenant.suspension_reason.isnot(None),
+        ),
+    ).count()
     
     # Get total users (from shared database or aggregate from all tenants)
     # This is a simplified version - you may need to query tenant databases
@@ -83,6 +92,7 @@ async def get_system_stats(
     return {
         "totalTenants": total_tenants,
         "activeTenants": active_tenants,
+        "suspendedTenants": suspended_tenants,
         "totalUsers": total_users,
         "systemUsers": system_users,
         "tenantUsers": tenant_users,
@@ -564,3 +574,8 @@ async def update_system_user_permissions(
         roles=user_roles_list(target),
         system_permissions=user_system_permissions_list(target),
     )
+
+
+from app.routes import platform_analytics
+
+system_admin.include_router(platform_analytics.router)

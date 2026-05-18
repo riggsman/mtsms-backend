@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from sqlalchemy.orm import Session
 from typing import Optional, List
 import json
@@ -17,6 +17,7 @@ from app.schemas.service_configuration import (
 )
 from app.helpers.pagination import PaginatedResponse
 from app.helpers.user_roles import user_is_system_admin
+from app.services import feature_access_service as fas
 
 service_configurations = APIRouter()
 
@@ -399,116 +400,15 @@ def check_service_access_for_tenant(
     service_name: str = Query(..., description="Name of the service or button ID to check access for"),
     db: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
+    x_tenant_domain: Optional[str] = Header(None, alias="X-Tenant-Domain"),
 ):
     """
-    Public tenant endpoint used by the student UI to check if a given
-    service is currently enabled (freemium or premium) in the admin
-    subscription management screen.
-
-    Accepts either:
-    - A service name (e.g., "Download Results")
-    - A button ID from serviceButtons.js (e.g., "quick_pay_fees")
-    
-    For now this checks global configuration only and does not
-    differentiate per-tenant subscription plans – if the service is
-    enabled for *any* subscription type, students can use it.
+    Tenant endpoint: master enable + tenant subscription plan (freemium/premium).
+    Accepts display name, button id, or name alias from the feature catalog.
     """
-    # First try to find by service name
-    subscription_service = (
-        db.query(SubscriptionService)
-        .filter(
-            SubscriptionService.name == service_name,
-            SubscriptionService.deleted_at.is_(None),
-        )
-        .first()
+    tenant = fas.resolve_tenant(
+        db,
+        institution_id=getattr(current_user, "institution_id", None),
+        domain=x_tenant_domain,
     )
-    
-    # If not found by name, try to find by button ID in configuration_key
-    if not subscription_service:
-        config_by_id = (
-            db.query(ServiceConfiguration)
-            .filter(
-                ServiceConfiguration.configuration_key == service_name,
-                ServiceConfiguration.deleted_at.is_(None),
-            )
-            .first()
-        )
-        if config_by_id:
-            # Get the subscription service by name from the config
-            subscription_service = (
-                db.query(SubscriptionService)
-                .filter(
-                    SubscriptionService.name == config_by_id.service_name,
-                    SubscriptionService.deleted_at.is_(None),
-                )
-                .first()
-            )
-    
-    if not subscription_service:
-        # Service not defined → no access
-        return {"service_name": service_name, "has_access": False}
-
-    # Look for any active configuration entries for this service
-    configs = (
-        db.query(ServiceConfiguration)
-        .filter(
-            ServiceConfiguration.service_name == subscription_service.name,
-            ServiceConfiguration.configuration_key.in_(
-                ["subscription_type_freemium", "subscription_type_premium"]
-            ),
-            ServiceConfiguration.deleted_at.is_(None),
-        )
-        .all()
-    )
-    
-    has_access = False
-    # Base amount comes from the SubscriptionService "price" field
-    amount = None
-    if subscription_service.price is not None:
-        try:
-            amount = float(subscription_service.price)
-        except (TypeError, ValueError):
-            amount = None
-    
-    # Track whether freemium is enabled and any configured max free downloads
-    is_freemium_enabled = False
-    max_free_download = None
-    
-    for cfg in configs:
-        # configuration_value is stored as JSON string like {"is_enabled": true}
-        try:
-            value = json.loads(cfg.configuration_value) if cfg.configuration_value else {}
-        except Exception:
-            value = {}
-        
-        is_enabled = bool(value.get("is_enabled", cfg.is_active))
-        
-        if is_enabled:
-            has_access = True
-            
-            # If this is the freemium configuration, read max_free_download if provided
-            if cfg.configuration_key == "subscription_type_freemium":
-                is_freemium_enabled = True
-                raw_max_free = value.get("max_free_download")
-                try:
-                    if raw_max_free is not None:
-                        max_free_download = int(raw_max_free)
-                except (TypeError, ValueError):
-                    max_free_download = None
-    
-    response = {
-        "service_name": service_name,
-        "has_access": has_access,
-    }
-    
-    # Only include amount if we successfully parsed a number
-    if amount is not None:
-        response["amount"] = amount
-    
-    # Include freemium/max-free metadata if available
-    if is_freemium_enabled:
-        response["is_freemium_enabled"] = True
-    if max_free_download is not None:
-        response["max_free_download"] = max_free_download
-    
-    return response
+    return fas.check_service_access(db, service_name, tenant)

@@ -65,3 +65,16 @@ class RefreshTokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+class LoginOtpRequest(BaseModel):
+    email: str
+
+
+class LoginOtpVerifyRequest(BaseModel):
+    email: str
+    otp: str
+
+
+class LoginOtpRequestResponse(BaseModel):
+    message: str
