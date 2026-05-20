@@ -12,7 +12,7 @@ __pycache__
 .venv
 venv
 env
-app/helpers/logs
+# app/helpers/logs
 **/*.log
 .coverage
 htmlcov

@@ -50,7 +50,7 @@ def build_login_response(user: User, tenant_name: str | None = None) -> LoginRes
 
     from app.schemas.login import UserInfo
 
-    perm_list = user_system_permissions_list(user) if is_system_admin else []
+    perm_list = user_system_permissions_list(user)
     user_info = UserInfo(
         id=user.id,
         username=user.username,
@@ -64,7 +64,7 @@ def build_login_response(user: User, tenant_name: str | None = None) -> LoginRes
         institution_id=user.institution_id,
         mustChangePassword=getattr(user, "must_change_password", "false") == "true",
         language=getattr(user, "language", "en") or "en",
-        system_permissions=perm_list if is_system_admin else None,
+        system_permissions=perm_list,
     )
 
     return LoginResponse(
@@ -94,6 +94,10 @@ async def new_login(loginRequest: LoginRequest, db: Session, tenant_name: str = 
         
         if not verify_password(loginRequest.password, user.password):
             raise HTTPException(status_code=400, detail="Invalid password")
+
+        from app.dependencies.tenant_activation import raise_if_tenant_suspended_for_login
+
+        raise_if_tenant_suspended_for_login(db, user)
 
         return build_login_response(user, tenant_name)
     
@@ -133,7 +137,11 @@ async def refresh_access_token(refresh_token: str):
         # Check if user is active
         if user.is_active != "active":
             raise HTTPException(status_code=401, detail="User account is not active")
-        
+
+        from app.dependencies.tenant_activation import raise_if_tenant_suspended_for_login
+
+        raise_if_tenant_suspended_for_login(db, user)
+
         # Create new tokens with same user data
         role_for_token = user_roles_list(user)
         data = {

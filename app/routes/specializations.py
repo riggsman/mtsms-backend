@@ -14,6 +14,8 @@ from app.models.specialty import Specialization
 from app.models.department import Department
 from app.helpers.pagination import PaginatedResponse
 from app.helpers.user_roles import user_is_system_admin
+from app.helpers.tenant_scope import institution_id_for_user
+from app.dependencies.institutionDependency import get_institution_id_from_header
 
 specialization_router = APIRouter()
 
@@ -151,10 +153,12 @@ def create_specialization_endpoint(
 def get_specialization_endpoint(
     specialization_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_tenant)
+    current_user: User = Depends(get_current_user_tenant),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Get a specialization by ID"""
-    return get_specialization(db=db, specialization_id=specialization_id)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    return get_specialization(db=db, specialization_id=specialization_id, institution_id=institution_id)
 
 
 @specialization_router.get("/specializations", response_model=PaginatedResponse[SpecializationResponse])
@@ -206,18 +210,22 @@ def update_specialization_endpoint(
     specialization_id: int,
     specialization_update: SpecializationUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Update a specialization"""
-    return update_specialization(db=db, specialization_id=specialization_id, specialization_update=specialization_update, current_user=current_user)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    return update_specialization(db=db, specialization_id=specialization_id, specialization_update=specialization_update, current_user=current_user, institution_id=institution_id)
 
 
 @specialization_router.delete("/specializations/{specialization_id}", status_code=204)
 def delete_specialization_endpoint(
     specialization_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Delete a specialization (soft delete)"""
-    delete_specialization(db=db, specialization_id=specialization_id, current_user=current_user)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    delete_specialization(db=db, specialization_id=specialization_id, current_user=current_user, institution_id=institution_id)
     return None

@@ -56,6 +56,7 @@ class UserResponse(BaseModel):
     profile_picture: Optional[str] = None
     language: Optional[str] = "en"
     branch_id: Optional[int] = None
+    system_permissions: List[str] = []
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -64,7 +65,7 @@ class UserResponse(BaseModel):
     def prepare_user_response(cls, data: Any):
         """ORM -> dict, fix MySQL zero dates, normalize roles."""
         from sqlalchemy import inspect as sa_inspect
-        from app.helpers.user_roles import parse_roles_to_list
+        from app.helpers.user_roles import parse_roles_to_list, user_system_permissions_list
 
         if data is not None and not isinstance(data, dict):
             try:
@@ -119,6 +120,7 @@ class UserResponse(BaseModel):
                 rl = parse_roles_to_list(rl)
             data["roles"] = rl
             data["role"] = ",".join(sorted(rl))
+            data["system_permissions"] = user_system_permissions_list(data)
 
         return data
 

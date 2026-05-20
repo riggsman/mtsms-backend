@@ -10,8 +10,8 @@ from app.helpers.activity_logger import log_create_activity, log_update_activity
 
 def create_department(db: Session, department: DepartmentRequest, institution_id: Optional[int] = None, current_user: Optional[User] = None) -> Department:
     """Create a new department"""
-    # Use institution_id from request if provided, otherwise use the parameter
-    final_institution_id = department.institution_id or institution_id
+    # institution_id parameter is already resolved for the caller's tenant
+    final_institution_id = institution_id or department.institution_id
     
     if not final_institution_id:
         from app.exceptions import ValidationError
@@ -53,12 +53,15 @@ def create_department(db: Session, department: DepartmentRequest, institution_id
     return new_department
 
 
-def get_department(db: Session, department_id: int) -> Department:
-    """Get a department by ID"""
-    department = db.query(Department).filter(
+def get_department(db: Session, department_id: int, institution_id: Optional[int] = None) -> Department:
+    """Get a department by ID, optionally scoped to institution_id."""
+    query = db.query(Department).filter(
         Department.id == department_id,
-        Department.deleted_at.is_(None)
-    ).first()
+        Department.deleted_at.is_(None),
+    )
+    if institution_id is not None:
+        query = query.filter(Department.institution_id == institution_id)
+    department = query.first()
     if not department:
         raise NotFoundError(f"Department with ID {department_id} not found")
     return department
@@ -86,9 +89,15 @@ def get_departments(
     return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
 
 
-def update_department(db: Session, department_id: int, department_update: DepartmentUpdate, current_user: Optional[User] = None) -> Department:
+def update_department(
+    db: Session,
+    department_id: int,
+    department_update: DepartmentUpdate,
+    current_user: Optional[User] = None,
+    institution_id: Optional[int] = None,
+) -> Department:
     """Update a department"""
-    department = get_department(db, department_id)
+    department = get_department(db, department_id, institution_id=institution_id)
     
     update_data = department_update.dict(exclude_unset=True)
     
@@ -128,9 +137,14 @@ def update_department(db: Session, department_id: int, department_update: Depart
     return department
 
 
-def delete_department(db: Session, department_id: int, current_user: Optional[User] = None) -> bool:
+def delete_department(
+    db: Session,
+    department_id: int,
+    current_user: Optional[User] = None,
+    institution_id: Optional[int] = None,
+) -> bool:
     """Soft delete a department"""
-    department = get_department(db, department_id)
+    department = get_department(db, department_id, institution_id=institution_id)
     department_name = f"{department.code} - {department.name}"
     institution_id = department.institution_id
     

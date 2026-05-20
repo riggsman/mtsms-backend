@@ -132,11 +132,39 @@ def get_tenant(
     # ALWAYS default to shared mode behavior unless explicitly in multi-tenant mode
     # This is the safest approach - only validate tenant if we're CERTAIN we're in multi-tenant mode
     if not is_multi_tenant:
-        # In shared mode (or any mode that's not explicitly multi-tenant), tenant name is optional
-        # Return as-is without validation - used for filtering data by institution_id
-        print(f"[get_tenant] Shared mode (mode='{mode}', normalized='{mode_normalized}') - returning tenant name without validation: {final_tenant_name}")
-        logger.debug(f"[get_tenant] Shared mode - skipping tenant validation, returning: {final_tenant_name}")
-        return final_tenant_name if final_tenant_name else None
+        # Shared mode: still validate X-Tenant-Name against JWT institution when both are present
+        if tenant_from_session and x_tenant_name:
+            key = x_tenant_name.strip().lower()
+            session_key = tenant_from_session.strip().lower()
+            if key != session_key:
+                from app.database.sessionManager import DefaultSessionLocal
+                from sqlalchemy import func
+                from app.helpers.tenant_scope import tenant_domain_matches
+                db = DefaultSessionLocal()
+                try:
+                    institution_id = None
+                    if authorization:
+                        try:
+                            scheme, token = authorization.split()
+                            if scheme.lower() == "bearer":
+                                from jose import jwt
+                                payload = jwt.get_unverified_claims(token)
+                                institution_id = payload.get("institution_id")
+                        except Exception:
+                            institution_id = None
+                    tenant = None
+                    if institution_id:
+                        tenant = db.query(Tenant).filter(Tenant.id == institution_id).first()
+                    if tenant and not tenant_domain_matches(tenant, x_tenant_name):
+                        raise HTTPException(
+                            status_code=403,
+                            detail="X-Tenant-Name does not match your institution domain",
+                        )
+                finally:
+                    db.close()
+        print(f"[get_tenant] Shared mode (mode='{mode}') - returning: {final_tenant_name or tenant_from_session}")
+        logger.debug(f"[get_tenant] Shared mode - returning: {final_tenant_name or tenant_from_session}")
+        return final_tenant_name if final_tenant_name else tenant_from_session
     else:
         # In multi_tenant mode, tenant name is required and must exist
         print(f"[get_tenant] Multi-tenant mode detected - validating tenant: {final_tenant_name}")

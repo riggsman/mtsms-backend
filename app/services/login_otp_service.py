@@ -65,6 +65,13 @@ async def request_login_otp(
         )
         return LoginOtpRequestResponse(message=OTP_GENERIC_SENT_MESSAGE)
 
+    from app.dependencies.tenant_activation import raise_if_tenant_suspended_for_login
+
+    try:
+        raise_if_tenant_suspended_for_login(db, user)
+    except HTTPException:
+        return LoginOtpRequestResponse(message=OTP_GENERIC_SENT_MESSAGE)
+
     otp_plain = _generate_otp()
     expires_at = datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)
 
@@ -245,6 +252,10 @@ async def verify_login_otp(
 
     record.used_at = now
     db.commit()
+
+    from app.dependencies.tenant_activation import raise_if_tenant_suspended_for_login
+
+    raise_if_tenant_suspended_for_login(db, user)
 
     record_otp_event(
         event_type="verified",

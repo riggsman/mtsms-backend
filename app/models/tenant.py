@@ -16,6 +16,9 @@ class Tenant(DefaultBase):
     domain = Column(String(200), nullable=True)
     logo_url = Column(String(500), nullable=True)  # URL to tenant logo file
     is_active = Column(Boolean, default=True, nullable=False)
+    services_activated = Column(Boolean, default=False, nullable=False)
+    services_activated_at = Column(DateTime, nullable=True)
+    services_activated_by = Column(Integer, nullable=True)
     suspension_reason = Column(Text, nullable=True)
     suspended_at = Column(DateTime, nullable=True)
     fee_amount = Column(Numeric(10, 2), nullable=True, default=0)  # Total fee amount

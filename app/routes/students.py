@@ -15,7 +15,23 @@ from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
 from app.helpers.branch_scope import effective_branch_scope_id
-from app.helpers.user_roles import user_has_role, user_is_system_admin, user_requires_tenant_scope_for_data
+from app.helpers.user_roles import (
+    user_has_role,
+    user_has_any_role,
+    user_has_tenant_permission,
+    user_is_system_admin,
+    user_requires_tenant_scope_for_data,
+)
+
+
+def _require_manage_students_for_admin_ops(current_user: User) -> None:
+    if not user_has_any_role(current_user, ["admin", "secretary"]):
+        return
+    if not user_has_tenant_permission(current_user, "manage_students"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Missing required permission: manage_students",
+        )
 from app.helpers.program_level import resolve_program_fee_level
 
 student = APIRouter()
@@ -108,10 +124,11 @@ def get_current_student(
 def create_student_endpoint(
     student_data: StudentRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN,UserRole.SUPER_ADMIN)),
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
     institution_id: Optional[int] = Depends(get_institution_id_from_header)
 ):
     """Create a new student - institution_id validated from header"""
+    _require_manage_students_for_admin_ops(current_user)
     # Use institution_id from header (validated) or request body, fallback to user's institution_id
     final_institution_id = institution_id or student_data.institution_id or current_user.institution_id
     
@@ -143,6 +160,7 @@ def list_students(
     current_user: User = Depends(get_current_user_tenant)
 ):
     """Get list of students with pagination - filtered by institution_id and tenant"""
+    _require_manage_students_for_admin_ops(current_user)
     skip = (page - 1) * page_size
     
     # Validate and extract institution_id from header

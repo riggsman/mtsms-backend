@@ -138,6 +138,30 @@ def user_system_permissions_list(user: Any) -> List[str]:
     return []
 
 
+KNOWN_TENANT_PERMISSION_KEYS = frozenset(
+    {"manage_billing", "view_analytics", "export_data", "manage_teachers", "manage_students"}
+)
+
+
+def user_is_tenant_super_admin(user: Any) -> bool:
+    return user_has_role(user, "super_admin") and not user_is_system_admin(user)
+
+
+def user_has_tenant_permission(user: Any, permission: str) -> bool:
+    """Tenant users: super_admin has all; admin/secretary need explicit grant in system_permissions."""
+    p = (permission or "").strip()
+    if not p or p not in KNOWN_TENANT_PERMISSION_KEYS:
+        return False
+    if user_is_system_admin(user):
+        return True
+    if user_is_tenant_super_admin(user):
+        return True
+    roles = user_roles_list(user)
+    if not any(r in ("admin", "secretary") for r in roles):
+        return False
+    return p in user_system_permissions_list(user)
+
+
 def user_has_system_permission(user: Any, permission: str) -> bool:
     """SYSTEM users: system_super_admin has all; system_admin needs explicit grant."""
     p = (permission or "").strip()

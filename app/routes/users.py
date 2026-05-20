@@ -15,6 +15,8 @@ from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
 from app.helpers.branch_scope import effective_branch_scope_id
+from app.helpers.tenant_scope import institution_id_for_user
+from app.dependencies.institutionDependency import get_institution_id_from_header
 from app.helpers.user_roles import (
     role_string_for_legacy,
     user_can_manage_other_users_passwords,
@@ -56,9 +58,11 @@ def search_users_endpoint(
     query: str = Query(..., min_length=1, description="Search by name, email, phone, or username"),
     db: Session = Depends(get_db_for_admin),
     current_user: User = Depends(require_any_role_admin(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Search users by name, email, phone, or username for permission management"""
-    users = search_users_for_permissions(db=db, query=query)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    users = search_users_for_permissions(db=db, query=query, institution_id=institution_id)
     results = []
     for u in users:
         results.append(UserSearchResult(
@@ -82,9 +86,11 @@ def get_user_permissions_endpoint(
     user_id: int,
     db: Session = Depends(get_db_for_admin),
     current_user: User = Depends(require_any_role_admin(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Get user permissions by user ID"""
-    user = get_user(db=db, user_id=user_id)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    user = get_user(db=db, user_id=user_id, institution_id=institution_id)
     return UserSearchResult(
         id=user.id,
         firstname=user.firstname,
@@ -106,9 +112,11 @@ def update_user_permissions_endpoint(
     perm_update: UserPermissionsUpdate,
     db: Session = Depends(get_db_for_admin),
     current_user: User = Depends(require_any_role_admin(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Update user permissions (add or remove permissions)"""
-    user = update_user_permissions(db=db, user_id=user_id, permissions=perm_update.permissions)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    user = update_user_permissions(db=db, user_id=user_id, permissions=perm_update.permissions, institution_id=institution_id)
     return UserSearchResult(
         id=user.id,
         firstname=user.firstname,
@@ -144,10 +152,12 @@ def create_user_endpoint(
 def get_user_endpoint(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_tenant)
+    current_user: User = Depends(get_current_user_tenant),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Get a user by ID"""
-    return get_user(db=db, user_id=user_id)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    return get_user(db=db, user_id=user_id, institution_id=institution_id)
 
 @user.get("/users", response_model=PaginatedResponse[UserResponse])
 def list_users(
@@ -296,19 +306,23 @@ def update_user_endpoint(
     user_id: int,
     user_update: UserUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Update a user"""
-    return update_user(db=db, user_id=user_id, user_update=user_update, current_user=current_user)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    return update_user(db=db, user_id=user_id, user_update=user_update, current_user=current_user, institution_id=institution_id)
 
 @user.delete("/users/{user_id}", status_code=204)
 def delete_user_endpoint(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Delete a user (soft delete)"""
-    delete_user(db=db, user_id=user_id, current_user=current_user)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    delete_user(db=db, user_id=user_id, current_user=current_user, institution_id=institution_id)
     return None
 
 @user.post("/students/assign-password", response_model=UserResponse, status_code=201)

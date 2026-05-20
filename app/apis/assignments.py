@@ -27,12 +27,15 @@ def create_assignment(db: Session, assignment: AssignmentRequest, institution_id
     db.refresh(new_assignment)
     return new_assignment
 
-def get_assignment(db: Session, assignment_id: int) -> Assignment:
-    """Get an assignment by ID"""
-    assignment = db.query(Assignment).filter(
+def get_assignment(db: Session, assignment_id: int, institution_id: Optional[int] = None) -> Assignment:
+    """Get an assignment by ID, optionally scoped to institution_id."""
+    query = db.query(Assignment).filter(
         Assignment.id == assignment_id,
-        Assignment.deleted_at.is_(None)
-    ).first()
+        Assignment.deleted_at.is_(None),
+    )
+    if institution_id is not None:
+        query = query.filter(Assignment.institution_id == institution_id)
+    assignment = query.first()
     if not assignment:
         raise NotFoundError(f"Assignment with ID {assignment_id} not found")
     return assignment
@@ -87,9 +90,14 @@ def get_assignments(
 
     return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
 
-def update_assignment(db: Session, assignment_id: int, assignment_update: AssignmentUpdate) -> Assignment:
+def update_assignment(
+    db: Session,
+    assignment_id: int,
+    assignment_update: AssignmentUpdate,
+    institution_id: Optional[int] = None,
+) -> Assignment:
     """Update an assignment"""
-    assignment = get_assignment(db, assignment_id)
+    assignment = get_assignment(db, assignment_id, institution_id=institution_id)
     
     update_data = assignment_update.dict(exclude_unset=True)
     for field, value in update_data.items():
@@ -99,9 +107,9 @@ def update_assignment(db: Session, assignment_id: int, assignment_update: Assign
     db.refresh(assignment)
     return assignment
 
-def delete_assignment(db: Session, assignment_id: int) -> bool:
+def delete_assignment(db: Session, assignment_id: int, institution_id: Optional[int] = None) -> bool:
     """Soft delete an assignment"""
-    assignment = get_assignment(db, assignment_id)
+    assignment = get_assignment(db, assignment_id, institution_id=institution_id)
     assignment.deleted_at = datetime.utcnow()
     db.commit()
     return True
@@ -167,12 +175,15 @@ def submit_assignment(db: Session, submission: AssignmentSubmissionRequest) -> A
     db.refresh(new_submission)
     return new_submission
 
-def get_student_submissions(db: Session, student_id: str) -> List[AssignmentSubmission]:
-    """Get all submissions for a specific student"""
-    return db.query(AssignmentSubmission).filter(
+def get_student_submissions(db: Session, student_id: str, institution_id: Optional[int] = None) -> List[AssignmentSubmission]:
+    """Get all submissions for a specific student, optionally scoped to institution."""
+    query = db.query(AssignmentSubmission).filter(
         AssignmentSubmission.student_id == student_id,
-        AssignmentSubmission.deleted_at.is_(None)
-    ).all()
+        AssignmentSubmission.deleted_at.is_(None),
+    )
+    if institution_id is not None:
+        query = query.filter(AssignmentSubmission.institution_id == institution_id)
+    return query.all()
 
 
 def get_submission_counts_by_institution(db: Session, institution_id: int) -> Dict[int, int]:
@@ -195,9 +206,7 @@ def list_submissions_for_assignment(
     institution_id: int,
 ) -> List[AssignmentSubmission]:
     """All submissions for one assignment (tenant-scoped)."""
-    assignment = get_assignment(db, assignment_id)
-    if assignment.institution_id != institution_id:
-        raise NotFoundError(f"Assignment with ID {assignment_id} not found")
+    get_assignment(db, assignment_id, institution_id=institution_id)
     return (
         db.query(AssignmentSubmission)
         .filter(

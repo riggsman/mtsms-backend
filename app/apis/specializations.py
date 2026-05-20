@@ -6,6 +6,7 @@ from app.models.user import User
 from app.schemas.specializations import SpecializationRequest, SpecializationResponse, SpecializationUpdate
 from app.exceptions import NotFoundError, ConflictError
 from app.helpers.pagination import paginate_query
+from app.helpers.tenant_scope import scoped_get_by_id, institution_id_from_user
 from app.helpers.activity_logger import log_create_activity, log_update_activity, log_delete_activity
 
 
@@ -67,15 +68,9 @@ def create_specialization(db: Session, specialization: SpecializationRequest, in
     return new_specialization
 
 
-def get_specialization(db: Session, specialization_id: int) -> Specialization:
-    """Get a specialization by ID"""
-    specialization = db.query(Specialization).filter(
-        Specialization.id == specialization_id,
-        Specialization.deleted_at.is_(None)
-    ).first()
-    if not specialization:
-        raise NotFoundError(f"Specialization with ID {specialization_id} not found")
-    return specialization
+def get_specialization(db: Session, specialization_id: int, institution_id: Optional[int] = None) -> Specialization:
+    """Get a specialization by ID, optionally scoped to institution_id."""
+    return scoped_get_by_id(db, Specialization, specialization_id, institution_id, not_found_label="Specialization")
 
 
 def get_specializations(
@@ -97,9 +92,10 @@ def get_specializations(
     return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
 
 
-def update_specialization(db: Session, specialization_id: int, specialization_update: SpecializationUpdate, current_user: Optional[User] = None) -> Specialization:
+def update_specialization(db: Session, specialization_id: int, specialization_update: SpecializationUpdate, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> Specialization:
     """Update a specialization"""
-    specialization = get_specialization(db, specialization_id)
+    scoped_id = institution_id_from_user(current_user, institution_id)
+    specialization = get_specialization(db, specialization_id, institution_id=scoped_id)
     
     update_data = specialization_update.dict(exclude_unset=True)
     
@@ -137,9 +133,10 @@ def update_specialization(db: Session, specialization_id: int, specialization_up
     return specialization
 
 
-def delete_specialization(db: Session, specialization_id: int, current_user: Optional[User] = None) -> bool:
+def delete_specialization(db: Session, specialization_id: int, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> bool:
     """Soft delete a specialization"""
-    specialization = get_specialization(db, specialization_id)
+    scoped_id = institution_id_from_user(current_user, institution_id)
+    specialization = get_specialization(db, specialization_id, institution_id=scoped_id)
     spec_name = f"{specialization.code} - {specialization.name}"
     institution_id = specialization.institution_id
     

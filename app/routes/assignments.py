@@ -18,6 +18,8 @@ from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
 from app.helpers.user_roles import user_is_system_admin
+from app.helpers.tenant_scope import institution_id_for_user
+from app.dependencies.institutionDependency import get_institution_id_from_header
 
 assignment = APIRouter()
 
@@ -25,18 +27,18 @@ assignment = APIRouter()
 def create_assignment_endpoint(
     assignment_data: AssignmentRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.STAFF, UserRole.SUPER_ADMIN, UserRole.TEACHER))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.STAFF, UserRole.SUPER_ADMIN, UserRole.TEACHER)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Create a new assignment"""
-    # Set institution_id from current_user if not provided in request
-    is_system_admin = user_is_system_admin(current_user)
-    institution_id = current_user.institution_id
-    if is_system_admin:
-        institution_id = assignment_data.institution_id or institution_id
+    institution_id = institution_id_for_user(
+        current_user,
+        header_institution_id=header_institution_id,
+        body_institution_id=assignment_data.institution_id,
+    )
     if not institution_id:
         from app.exceptions import ValidationError
         raise ValidationError("institution_id is required to create an assignment")
-    
     return create_assignment(db=db, assignment=assignment_data, institution_id=institution_id)
 
 @assignment.get("/assignments", response_model=PaginatedResponse[AssignmentResponse])
@@ -51,7 +53,8 @@ def list_assignments(
     ),
     due_window_days: int = Query(14, ge=1, le=366),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_tenant)
+    current_user: User = Depends(get_current_user_tenant),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Get list of assignments with pagination"""
     skip = (page - 1) * page_size
@@ -64,17 +67,7 @@ def list_assignments(
     if lifecycle in ("active", "due"):
         lifecycle_filter = lifecycle
 
-    # Determine institution_id for filtering
-    # System admins (roles starting with 'system_') can see all assignments
-    # Tenant users must filter by their institution_id
-    institution_id = None
-    if current_user:
-        is_system_admin = user_is_system_admin(current_user)
-        if not is_system_admin:
-            institution_id = current_user.institution_id
-            if not institution_id:
-                from app.exceptions import ValidationError
-                raise ValidationError("User must belong to an institution to view assignments")
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
 
     assignments, total = get_assignments(
         db=db,
@@ -161,29 +154,40 @@ def list_assignment_submissions_endpoint(
 def get_assignment_endpoint(
     assignment_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_tenant)
+    current_user: User = Depends(get_current_user_tenant),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Get an assignment by ID"""
-    return get_assignment(db=db, assignment_id=assignment_id)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    return get_assignment(db=db, assignment_id=assignment_id, institution_id=institution_id)
 
 @assignment.put("/assignments/{assignment_id}", response_model=AssignmentResponse)
 def update_assignment_endpoint(
     assignment_id: int,
     assignment_update: AssignmentUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.STAFF, UserRole.SUPER_ADMIN, UserRole.TEACHER))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.STAFF, UserRole.SUPER_ADMIN, UserRole.TEACHER)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Update an assignment"""
-    return update_assignment(db=db, assignment_id=assignment_id, assignment_update=assignment_update)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    return update_assignment(
+        db=db,
+        assignment_id=assignment_id,
+        assignment_update=assignment_update,
+        institution_id=institution_id,
+    )
 
 @assignment.delete("/assignments/{assignment_id}", status_code=204)
 def delete_assignment_endpoint(
     assignment_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Delete an assignment (soft delete)"""
-    delete_assignment(db=db, assignment_id=assignment_id)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    delete_assignment(db=db, assignment_id=assignment_id, institution_id=institution_id)
     return None
 
 @assignment.post("/assignments/submit", response_model=AssignmentSubmissionResponse, status_code=201)
@@ -206,8 +210,8 @@ async def submit_assignment_endpoint(
     from fastapi import HTTPException, status
     
     # Get assignment to verify it exists and get institution_id
-    assignment = get_assignment(db, assignment_id)
-    institution_id = assignment.institution_id
+    institution_id = institution_id_for_user(current_user)
+    assignment = get_assignment(db, assignment_id, institution_id=institution_id)
     
     # Get tenant domain for file prefixing
     tenant_domain = get_tenant_domain(institution_id)
@@ -236,10 +240,12 @@ async def submit_assignment_endpoint(
 def get_student_submissions_endpoint(
     student_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_tenant)
+    current_user: User = Depends(get_current_user_tenant),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Get all submissions for a specific student"""
-    submissions = get_student_submissions(db=db, student_id=student_id)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    submissions = get_student_submissions(db=db, student_id=student_id, institution_id=institution_id)
     # Map fields to match frontend expectations
     result = []
     for sub in submissions:

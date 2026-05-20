@@ -43,6 +43,7 @@ from app.routes import (
     payroll,
     student_dashboard,
     staff_dashboard,
+    admin_dashboard,
     leave_requests,
     utility_requests,
     notifications,
@@ -64,13 +65,21 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS middleware - allow Authorization header
+# CORS middleware - allow Authorization and tenant-scoping headers
+CORS_ALLOW_HEADERS = [
+    "Authorization",
+    "Content-Type",
+    "X-Tenant-Name",
+    "X-Tenant-Domain",
+    "X-Requested-With",
+    "X-Institution-Id",
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["Authorization", "Content-Type", "X-Tenant-Name", "X-Requested-With", "X-Institution-Id"],
+    allow_headers=CORS_ALLOW_HEADERS,
 )
 
 # Socket.IO setup - try to initialize, fallback gracefully
@@ -97,6 +106,7 @@ except Exception as e:
 
 from app.middleware.analytics_middleware import analytics_middleware as platform_analytics_middleware
 from app.middleware.platform_error_handlers import register_platform_error_handlers
+from app.middleware.tenant_activation_middleware import tenant_activation_middleware
 
 register_platform_error_handlers(app)
 
@@ -104,6 +114,11 @@ register_platform_error_handlers(app)
 @app.middleware("http")
 async def platform_analytics_http_middleware(request: Request, call_next):
     return await platform_analytics_middleware(request, call_next)
+
+
+@app.middleware("http")
+async def tenant_services_activation_http_middleware(request: Request, call_next):
+    return await tenant_activation_middleware(request, call_next)
 
 
 # CORS middleware - handle OPTIONS before any other processing
@@ -120,7 +135,7 @@ async def cors_middleware(request: Request, call_next):
             headers={
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-                "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Tenant-Name, X-Requested-With, X-Institution-Id",
+                "Access-Control-Allow-Headers": ", ".join(CORS_ALLOW_HEADERS),
                 "Access-Control-Allow-Credentials": "true",
             }
         )
@@ -192,9 +207,6 @@ app.include_router(system_config.system_config, prefix="/api/v1", tags=["system-
 # Public / general routes
 app.include_router(contact.contact, prefix="/api/v1", tags=["contact"])
 
-
-app.include_router(system_settings.system_settings, prefix="/api/v1", tags=["system-settings"])
-
 # Subscription services routes
 app.include_router(
     subscription_services.subscription_services,
@@ -245,6 +257,7 @@ app.include_router(certificates.certificate_router, prefix="/api/v1", tags=["cer
 app.include_router(payroll.router, prefix="/api/v1", tags=["payroll"])
 app.include_router(student_dashboard.router, prefix="/api/v1", tags=["student-dashboard"])
 app.include_router(staff_dashboard.router, prefix="/api/v1", tags=["staff-dashboard"])
+app.include_router(admin_dashboard.router, prefix="/api/v1", tags=["admin-dashboard"])
 
 # Request management routes
 app.include_router(leave_requests.leave_router, prefix="/api/v1", tags=["leave-requests"])
@@ -288,6 +301,9 @@ app.include_router(
     prefix="/api/v1",
     tags=["parent-portal"],
 )
+
+# Register last so GET/PUT /system/settings always use the full system_settings table handler
+app.include_router(system_settings.system_settings, prefix="/api/v1", tags=["system-settings"])
 
 # Import models to register them with metadata for table creation
 from app.models.school import School, SchoolFee

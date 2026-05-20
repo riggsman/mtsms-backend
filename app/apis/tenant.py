@@ -162,7 +162,8 @@ async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optio
         category=tenant.category.upper(),  # Ensure uppercase (HI or SI)
         domain=tenant.domain,
         database_url=tenant_database_url,
-        is_active=tenant.is_active if tenant.is_active is not None else True
+        is_active=tenant.is_active if tenant.is_active is not None else True,
+        services_activated=False,
     )
     
     if tenant.subscription_plan:
@@ -978,8 +979,16 @@ async def _upload_tenant_logo_safe(
         if should_close_settings:
             settings_db.close()
 
-def suspend_tenant(db: Session, tenant_id: int, reason: str) -> Tenant:
-    """Mark tenant inactive and record suspension reason (blocks login via get_tenant)."""
+def suspend_tenant(
+    db: Session,
+    tenant_id: int,
+    reason: str,
+    *,
+    actor_user_id: int | None = None,
+) -> Tenant:
+    """Mark tenant inactive and record suspension reason (blocks tenant user login)."""
+    from app.services.tenant_audit_service import record_tenant_audit_event
+
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         raise NotFoundError(f"Tenant with ID {tenant_id} not found")
@@ -991,11 +1000,25 @@ def suspend_tenant(db: Session, tenant_id: int, reason: str) -> Tenant:
     tenant.suspended_at = datetime.datetime.utcnow()
     db.commit()
     db.refresh(tenant)
+    record_tenant_audit_event(
+        db,
+        tenant_id=tenant.id,
+        action="suspend",
+        reason=r,
+        actor_user_id=actor_user_id,
+    )
     return _enrich_tenant(db, tenant)
 
 
-def resume_tenant(db: Session, tenant_id: int) -> Tenant:
+def resume_tenant(
+    db: Session,
+    tenant_id: int,
+    *,
+    actor_user_id: int | None = None,
+) -> Tenant:
     """Re-activate tenant and clear suspension metadata."""
+    from app.services.tenant_audit_service import record_tenant_audit_event
+
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         raise NotFoundError(f"Tenant with ID {tenant_id} not found")
@@ -1004,6 +1027,12 @@ def resume_tenant(db: Session, tenant_id: int) -> Tenant:
     tenant.suspended_at = None
     db.commit()
     db.refresh(tenant)
+    record_tenant_audit_event(
+        db,
+        tenant_id=tenant.id,
+        action="resume",
+        actor_user_id=actor_user_id,
+    )
     return _enrich_tenant(db, tenant)
 
 

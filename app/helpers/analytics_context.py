@@ -48,6 +48,8 @@ def map_login_failure_reason(detail: Any) -> str:
         return "invalid_username"
     if "password" in d:
         return "invalid_password"
+    if "suspended" in d or "tenant_suspended" in d:
+        return "tenant_suspended"
     if "inactive" in d or "not active" in d:
         return "inactive_account"
     if "missing" in d:

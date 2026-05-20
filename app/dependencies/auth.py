@@ -6,7 +6,7 @@ from app.models.user import User
 from app.models.role import UserRole
 from app.dependencies.tenantDependency import get_db
 from app.database.base import get_db_session
-from app.helpers.user_roles import role_string_for_legacy, user_roles_list
+from app.helpers.user_roles import role_string_for_legacy, user_roles_list, user_has_tenant_permission
 
 def _expand_role_aliases(role_value: str) -> list[str]:
     """Return role aliases used across legacy/new role names."""
@@ -306,6 +306,20 @@ def require_any_role_admin(*allowed_roles: UserRole):
             detail=f"Access denied. Required one of: {allowed_role_values}"
         )
     return role_checker
+
+
+def require_tenant_permission(permission: str):
+    """Require a tenant-scoped permission (manage_billing, view_analytics, etc.)."""
+
+    def permission_checker(current_user: User = Depends(get_current_user_tenant)) -> User:
+        if not user_has_tenant_permission(current_user, permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required permission: {permission}",
+            )
+        return current_user
+
+    return permission_checker
 
 
 def get_current_user_optional(

@@ -13,6 +13,8 @@ from app.models.role import UserRole
 from app.models.department import Department
 from app.helpers.pagination import PaginatedResponse
 from app.helpers.user_roles import user_is_system_admin
+from app.helpers.tenant_scope import institution_id_for_user
+from app.dependencies.institutionDependency import get_institution_id_from_header
 
 department_router = APIRouter()
 
@@ -106,26 +108,36 @@ def copy_system_department(
 def create_department_endpoint(
     department_data: DepartmentRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Create a new department"""
-    institution_id = department_data.institution_id or current_user.institution_id
-    
+    institution_id = institution_id_for_user(
+        current_user,
+        header_institution_id=header_institution_id,
+        body_institution_id=department_data.institution_id,
+    )
     if not institution_id:
         from app.exceptions import ValidationError
-        raise ValidationError("institution_id is required. Either provide it in the request body or ensure the user belongs to an institution")
-    
-    return create_department(db=db, department=department_data, institution_id=institution_id, current_user=current_user)
+        raise ValidationError("institution_id is required for this operation")
+    return create_department(
+        db=db,
+        department=department_data,
+        institution_id=institution_id,
+        current_user=current_user,
+    )
 
 
 @department_router.get("/departments/{department_id}", response_model=DepartmentResponse)
 def get_department_endpoint(
     department_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_tenant)
+    current_user: User = Depends(get_current_user_tenant),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Get a department by ID"""
-    return get_department(db=db, department_id=department_id)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    return get_department(db=db, department_id=department_id, institution_id=institution_id)
 
 
 @department_router.get("/departments", response_model=PaginatedResponse[DepartmentResponse])
@@ -134,7 +146,8 @@ def list_departments(
     page_size: int = Query(10, ge=1, le=1000),
     school_id: Optional[int] = Query(None, description="When set, only departments under this school/faculty"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_tenant)
+    current_user: User = Depends(get_current_user_tenant),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Get list of departments with pagination"""
     import logging
@@ -143,19 +156,8 @@ def list_departments(
     logger.info(f"[list_departments] user_id={current_user.id}, role={current_user.role}, institution_id={current_user.institution_id}")
     
     skip = (page - 1) * page_size
-    
-    # Determine institution_id for filtering
-    institution_id = None
-    if current_user:
-        is_system_admin = user_is_system_admin(current_user)
-        logger.info(f"[list_departments] is_system_admin={is_system_admin}")
-        if not is_system_admin:
-            institution_id = current_user.institution_id
-            logger.info(f"[list_departments] using institution_id={institution_id}")
-            if not institution_id:
-                from app.exceptions import ValidationError
-                raise ValidationError("User must belong to an institution to view departments")
-    
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+
     departments, total = get_departments(
         db=db,
         skip=skip,
@@ -177,18 +179,28 @@ def update_department_endpoint(
     department_id: int,
     department_update: DepartmentUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Update a department"""
-    return update_department(db=db, department_id=department_id, department_update=department_update, current_user=current_user)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    return update_department(
+        db=db,
+        department_id=department_id,
+        department_update=department_update,
+        current_user=current_user,
+        institution_id=institution_id,
+    )
 
 
 @department_router.delete("/departments/{department_id}", status_code=204)
 def delete_department_endpoint(
     department_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Delete a department (soft delete)"""
-    delete_department(db=db, department_id=department_id, current_user=current_user)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    delete_department(db=db, department_id=department_id, current_user=current_user, institution_id=institution_id)
     return None

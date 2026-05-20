@@ -48,6 +48,10 @@ class SystemSettings(DefaultBase):
     firebase_measurement_id = Column(String(255), nullable=True)
     firebase_service_account_uploaded = Column(Boolean, default=False, nullable=False)
 
+    platform_support_email = Column(String(255), nullable=True)
+    platform_support_phone = Column(String(50), nullable=True)
+    platform_support_hours = Column(String(255), nullable=True)
+
     created_at = Column(
         DateTime, default=datetime.datetime.utcnow, nullable=False
     )

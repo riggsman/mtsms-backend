@@ -1,7 +1,7 @@
 from typing import Optional
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class CacheVersionResponse(BaseModel):
@@ -84,12 +84,17 @@ class SystemSettingsRequest(BaseModel):
   accessTokenExpireMinutes: Optional[int] = None
   refreshTokenExpireDays: Optional[int] = None
   firebaseMessaging: Optional[FirebaseMessagingConfig] = None
+  platformSupportEmail: Optional[str] = None
+  platformSupportPhone: Optional[str] = None
+  platformSupportHours: Optional[str] = None
 
 
 class SystemSettingsResponse(BaseModel):
   """
   Response model sent back to the frontend.
   """
+
+  model_config = ConfigDict(from_attributes=True)
 
   id: int
   maintenanceMode: bool
@@ -100,10 +105,14 @@ class SystemSettingsResponse(BaseModel):
   cacheTimeout: Optional[int] = None
   inactivityTimeout: Optional[int] = None
   maintenanceCheckInterval: Optional[int] = None
-  accessTokenExpireMinutes: int
-  refreshTokenExpireDays: int
+  accessTokenExpireMinutes: int = 60
+  refreshTokenExpireDays: int = 7
   logoUrl: Optional[str] = None
+  cacheVersion: Optional[str] = None
   firebaseMessaging: Optional[FirebaseMessagingConfig] = None
+  platformSupportEmail: Optional[str] = None
+  platformSupportPhone: Optional[str] = None
+  platformSupportHours: Optional[str] = None
   created_at: Optional[datetime] = None
   updated_at: Optional[datetime] = None
 

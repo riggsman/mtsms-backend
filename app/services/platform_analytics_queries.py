@@ -606,3 +606,111 @@ def get_tenants_matrix(
         )
 
     return {"tenants": rows}
+
+
+def _calc_series_trend(series: list[dict], value_key: str, recent_size: int = 3) -> tuple[str, float]:
+    """Return trend direction (up/down/stable) and percent change for recent vs older buckets."""
+    if len(series) < 2:
+        return "stable", 0.0
+    recent = series[-recent_size:]
+    older = series[: -recent_size] if len(series) > recent_size else series[:1]
+    recent_avg = sum(item.get(value_key, 0) or 0 for item in recent) / len(recent)
+    older_avg = sum(item.get(value_key, 0) or 0 for item in older) / len(older)
+    if recent_avg > older_avg:
+        trend = "up"
+    elif recent_avg < older_avg:
+        trend = "down"
+    else:
+        trend = "stable"
+    change = ((recent_avg - older_avg) / older_avg * 100) if older_avg > 0 else 0.0
+    return trend, round(change, 1)
+
+
+def get_tenant_growth_series(
+    db: Session,
+    from_date: Optional[datetime] = None,
+    to_date: Optional[datetime] = None,
+) -> list[dict[str, Any]]:
+    """New tenants per calendar month in the requested range (default: last 12 months)."""
+    from dateutil.relativedelta import relativedelta
+
+    now = datetime.utcnow()
+    if from_date is None and to_date is None:
+        range_end = now
+        range_start = (now.replace(day=1) - relativedelta(months=11)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+    else:
+        range_start, range_end = _parse_range(from_date, to_date)
+
+    cursor = range_start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end_month = range_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    series: list[dict[str, Any]] = []
+    while cursor <= end_month:
+        month_end = cursor + relativedelta(months=1)
+        count = (
+            db.query(Tenant)
+            .filter(Tenant.created_at >= cursor, Tenant.created_at < month_end)
+            .count()
+        )
+        series.append(
+            {
+                "month": cursor.strftime("%b %Y"),
+                "monthShort": cursor.strftime("%b"),
+                "date": cursor.strftime("%Y-%m-%d"),
+                "tenants": count,
+            }
+        )
+        cursor = month_end
+
+    cumulative = 0
+    for item in series:
+        cumulative += item["tenants"]
+        item["cumulative"] = cumulative
+    return series
+
+
+def get_user_activity_series(
+    db: Session,
+    from_date: Optional[datetime] = None,
+    to_date: Optional[datetime] = None,
+) -> list[dict[str, Any]]:
+    """Successful logins per day (login_audit_events) in the requested range (default: last 30 days)."""
+    now = datetime.utcnow()
+    if from_date is None and to_date is None:
+        range_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        range_start = (now - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        range_start, range_end = _parse_range(from_date, to_date)
+
+    series: list[dict[str, Any]] = []
+    cursor = range_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    while cursor <= range_end:
+        day_end = cursor + timedelta(days=1)
+        active = (
+            db.query(LoginAuditEvent)
+            .filter(
+                LoginAuditEvent.outcome == "success",
+                LoginAuditEvent.created_at >= cursor,
+                LoginAuditEvent.created_at < day_end,
+            )
+            .count()
+        )
+        series.append(
+            {
+                "date": cursor.strftime("%Y-%m-%d"),
+                "day": cursor.strftime("%a"),
+                "activeUsers": active,
+                "newUsers": active,
+            }
+        )
+        cursor = day_end
+        if len(series) > 366:
+            break
+
+    cumulative = 0
+    for item in series:
+        cumulative += item["activeUsers"]
+        item["cumulative"] = cumulative
+    return series

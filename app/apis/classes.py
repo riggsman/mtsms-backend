@@ -5,6 +5,7 @@ from app.models.user import User
 from app.schemas.classes import ClassRequest, ClassResponse, ClassUpdate
 from app.exceptions import NotFoundError, ConflictError
 from app.helpers.pagination import paginate_query
+from app.helpers.tenant_scope import scoped_get_by_id, institution_id_from_user
 from app.helpers.activity_logger import log_create_activity, log_update_activity, log_delete_activity
 
 def create_class(db: Session, class_data: ClassRequest, institution_id: Optional[int] = None, current_user: Optional[User] = None) -> Class:
@@ -110,18 +111,10 @@ def _enrich_class_with_level(db: Session, class_obj: Class) -> Class:
     
     return class_obj
 
-def get_class(db: Session, class_id: int) -> Class:
-    """Get a class by ID"""
-    class_obj = db.query(Class).filter(
-        Class.id == class_id,
-        Class.deleted_at.is_(None)
-    ).first()
-    if not class_obj:
-        raise NotFoundError(f"Class with ID {class_id} not found")
-    
-    # Enrich with level information
-    class_obj = _enrich_class_with_level(db, class_obj)
-    return class_obj
+def get_class(db: Session, class_id: int, institution_id: Optional[int] = None) -> Class:
+    """Get a class by ID, optionally scoped to institution_id."""
+    class_obj = scoped_get_by_id(db, Class, class_id, institution_id, not_found_label="Class")
+    return _enrich_class_with_level(db, class_obj)
 
 def get_default_classes(institution_level: str = "HI") -> List[dict]:
     """Get default class definitions"""
@@ -234,9 +227,10 @@ def get_classes(
     
     return paginated_defaults, len(default_classes_list)
 
-def update_class(db: Session, class_id: int, class_update: ClassUpdate, current_user: Optional[User] = None) -> Class:
+def update_class(db: Session, class_id: int, class_update: ClassUpdate, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> Class:
     """Update a class"""
-    class_obj = get_class(db, class_id)
+    scoped_id = institution_id_from_user(current_user, institution_id)
+    class_obj = get_class(db, class_id, institution_id=scoped_id)
     
     update_data = class_update.dict(exclude_unset=True)
     
@@ -302,9 +296,10 @@ def check_classes_configured(db: Session, institution_id: int) -> bool:
         return count > 0
     
 
-def delete_class(db: Session, class_id: int, current_user: Optional[User] = None) -> bool:
+def delete_class(db: Session, class_id: int, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> bool:
     """Soft delete a class"""
-    class_obj = get_class(db, class_id)
+    scoped_id = institution_id_from_user(current_user, institution_id)
+    class_obj = get_class(db, class_id, institution_id=scoped_id)
     class_name = f"{class_obj.name} ({class_obj.code})"
     institution_id = class_obj.institution_id
     from datetime import datetime

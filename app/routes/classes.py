@@ -12,6 +12,8 @@ from app.models.user import User
 from app.models.role import UserRole
 from app.helpers.pagination import PaginatedResponse
 from app.helpers.user_roles import user_is_system_admin
+from app.helpers.tenant_scope import institution_id_for_user
+from app.dependencies.institutionDependency import get_institution_id_from_header
 
 class_router = APIRouter()
 
@@ -34,10 +36,12 @@ def create_class_endpoint(
 def get_class_endpoint(
     class_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_tenant)
+    current_user: User = Depends(get_current_user_tenant),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Get a class by ID"""
-    return get_class(db=db, class_id=class_id)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    return get_class(db=db, class_id=class_id, institution_id=institution_id)
 
 @class_router.get("/classes", response_model=PaginatedResponse[ClassResponse])
 def list_classes(
@@ -119,17 +123,21 @@ def update_class_endpoint(
     class_id: int,
     class_update: ClassUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Update a class"""
-    return update_class(db=db, class_id=class_id, class_update=class_update, current_user=current_user)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    return update_class(db=db, class_id=class_id, class_update=class_update, current_user=current_user, institution_id=institution_id)
 
 @class_router.delete("/classes/{class_id}", status_code=204)
 def delete_class_endpoint(
     class_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """Delete a class (soft delete)"""
-    delete_class(db=db, class_id=class_id, current_user=current_user)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    delete_class(db=db, class_id=class_id, current_user=current_user, institution_id=institution_id)
     return None

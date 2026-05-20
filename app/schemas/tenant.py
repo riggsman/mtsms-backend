@@ -21,6 +21,9 @@ class TenantResponse(BaseModel):
     domain: Optional[str] = None
     database_url: Optional[str] = None
     is_active: bool = True
+    services_activated: bool = False
+    services_activated_at: Optional[datetime] = None
+    services_activated_by: Optional[int] = None
     suspension_reason: Optional[str] = None
     suspended_at: Optional[datetime] = None
     logo_url: Optional[str] = None  # URL to tenant logo

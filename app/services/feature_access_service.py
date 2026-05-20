@@ -348,23 +348,33 @@ def save_tenant_feature_matrix(
         plan_allowed = feature_allowed_for_plan(service, feat, plan)
         enabled_for_tenant = bool(item.get("enabled_for_tenant", False))
 
-        if enabled_for_tenant == plan_allowed:
-            if button_id in existing:
-                db.delete(existing[button_id])
-            continue
-
         row = existing.get(button_id)
-        if row:
-            row.is_enabled = enabled_for_tenant
-            db.add(row)
-        else:
-            db.add(
-                TenantFeatureEntitlement(
-                    tenant_id=tenant.id,
-                    button_id=button_id,
-                    is_enabled=enabled_for_tenant,
+        if enabled_for_tenant:
+            if not plan_allowed:
+                continue
+            if row:
+                row.is_enabled = True
+                db.add(row)
+            else:
+                db.add(
+                    TenantFeatureEntitlement(
+                        tenant_id=tenant.id,
+                        button_id=button_id,
+                        is_enabled=True,
+                    )
                 )
-            )
+        else:
+            if row:
+                row.is_enabled = False
+                db.add(row)
+            else:
+                db.add(
+                    TenantFeatureEntitlement(
+                        tenant_id=tenant.id,
+                        button_id=button_id,
+                        is_enabled=False,
+                    )
+                )
 
     db.commit()
     return get_tenant_feature_matrix(db, tenant)

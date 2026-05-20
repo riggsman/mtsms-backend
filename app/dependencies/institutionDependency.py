@@ -7,14 +7,41 @@ from typing import Optional
 from app.dependencies.auth import get_current_user_tenant
 from app.models.user import User
 from app.helpers.user_roles import user_is_system_admin
+from app.helpers.tenant_scope import tenant_domain_matches
+from app.models.tenant import Tenant
+from app.database.base import DefaultSessionLocal
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+def _validate_tenant_header_for_user(
+    user: User,
+    institution_id: int,
+    x_tenant_name: Optional[str],
+) -> None:
+    """Ensure X-Tenant-Name (domain/name) matches the user's institution when provided."""
+    if not x_tenant_name or not institution_id:
+        return
+    db = DefaultSessionLocal()
+    try:
+        tenant = db.query(Tenant).filter(Tenant.id == institution_id, Tenant.is_active == True).first()
+        if tenant and not tenant_domain_matches(tenant, x_tenant_name):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Tenant domain/name does not match your institution. "
+                    f"Use domain '{tenant.domain or tenant.name}'."
+                ),
+            )
+    finally:
+        db.close()
+
+
 def get_institution_id_from_header(
     x_institution_id: Optional[str] = Header(default=None, alias="X-Institution-Id"),
-    current_user: User = Depends(get_current_user_tenant)
+    x_tenant_name: Optional[str] = Header(default=None, alias="X-Tenant-Name"),
+    current_user: User = Depends(get_current_user_tenant),
 ) -> Optional[int]:
     """
     Extracts and validates institution_id from the X-Institution-Id header.
@@ -71,6 +98,7 @@ def get_institution_id_from_header(
                     detail=f"Institution ID mismatch. You can only access data for your institution (ID: {current_user.institution_id})"
                 )
             logger.debug(f"[get_institution_id] Validated institution_id: {header_institution_id}")
+            _validate_tenant_header_for_user(current_user, header_institution_id, x_tenant_name)
             return header_institution_id
         except (ValueError, TypeError):
             raise HTTPException(
@@ -80,6 +108,7 @@ def get_institution_id_from_header(
     
     # No header provided - use user's institution_id
     logger.debug(f"[get_institution_id] Using user's institution_id: {current_user.institution_id}")
+    _validate_tenant_header_for_user(current_user, current_user.institution_id, x_tenant_name)
     return current_user.institution_id
 
 

@@ -13,6 +13,7 @@ from app.helpers.user_roles import (
 )
 from app.exceptions import NotFoundError, ConflictError
 from app.helpers.pagination import paginate_query
+from app.helpers.tenant_scope import scoped_get_by_id, institution_id_from_user
 from app.schemas.users import UserRequest, UserUpdate
 from app.authentication.authenticator import hash_password, validate_password_strength
 from app.exceptions import ValidationError
@@ -205,15 +206,9 @@ def create_user(db: Session, user: UserRequest, creator_user: Optional[User] = N
     
     return new_user
 
-def get_user(db: Session, user_id: int) -> User:
-    """Get a user by ID"""
-    user = db.query(User).filter(
-        User.id == user_id,
-        User.deleted_at.is_(None)
-    ).first()
-    if not user:
-        raise NotFoundError(f"User with ID {user_id} not found")
-    return user
+def get_user(db: Session, user_id: int, institution_id: Optional[int] = None) -> User:
+    """Get a user by ID, optionally scoped to institution_id."""
+    return scoped_get_by_id(db, User, user_id, institution_id, not_found_label="User")
 
 
 def get_users(
@@ -256,9 +251,10 @@ def get_user_by_email(db: Session, email: str) -> Optional[User]:
         User.deleted_at.is_(None)
     ).first()
 
-def update_user(db: Session, user_id: int, user_update: UserUpdate, current_user: Optional[User] = None) -> User:
+def update_user(db: Session, user_id: int, user_update: UserUpdate, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> User:
     """Update a user"""
-    user = get_user(db, user_id)
+    scoped_id = institution_id_from_user(current_user, institution_id)
+    user = get_user(db, user_id, institution_id=scoped_id)
 
     dump = getattr(user_update, "model_dump", None)
     if callable(dump):
@@ -319,7 +315,9 @@ def update_user(db: Session, user_id: int, user_update: UserUpdate, current_user
     db.refresh(user)
 
     try:
-        EmailService.send_user_update_email(user)
+        from app.models.tenant import Tenant
+        tenant_name = db.query(Tenant.name).filter(Tenant.id == user.institution_id).scalar()
+        EmailService.send_user_update_email(user, tenant_name.upper())
     except Exception as e:
         logger.warning("send_user_update_email failed for user %s: %s", user.id, e)
 
@@ -340,9 +338,10 @@ def update_user(db: Session, user_id: int, user_update: UserUpdate, current_user
     
     return user
 
-def delete_user(db: Session, user_id: int, current_user: Optional[User] = None) -> bool:
+def delete_user(db: Session, user_id: int, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> bool:
     """Soft delete a user"""
-    user = get_user(db, user_id)
+    scoped_id = institution_id_from_user(current_user, institution_id)
+    user = get_user(db, user_id, institution_id=scoped_id)
     entity_name = f"{user.firstname} {user.lastname} ({user.username})".strip()
     institution_id = user.institution_id
     
@@ -918,24 +917,32 @@ def suspend_user_by_student_id(db: Session, student_id: int, reason: str, curren
     return user_to_suspend
 
 
-def search_users_for_permissions(db: Session, query: str, limit: int = 20) -> List[User]:
+def search_users_for_permissions(
+    db: Session,
+    query: str,
+    limit: int = 20,
+    institution_id: Optional[int] = None,
+) -> List[User]:
     """Search users by name, email, phone, or username for permission management"""
     search_term = f"%{query}%"
-    return db.query(User).filter(
+    q = db.query(User).filter(
         User.deleted_at.is_(None),
         (
-            (User.firstname.ilike(search_term)) |
-            (User.lastname.ilike(search_term)) |
-            (User.email.ilike(search_term)) |
-            (User.phone.ilike(search_term)) |
-            (User.username.ilike(search_term))
-        )
-    ).limit(limit).all()
+            (User.firstname.ilike(search_term))
+            | (User.lastname.ilike(search_term))
+            | (User.email.ilike(search_term))
+            | (User.phone.ilike(search_term))
+            | (User.username.ilike(search_term))
+        ),
+    )
+    if institution_id is not None:
+        q = q.filter(User.institution_id == institution_id)
+    return q.limit(limit).all()
 
 
-def update_user_permissions(db: Session, user_id: int, permissions: List[str]) -> User:
+def update_user_permissions(db: Session, user_id: int, permissions: List[str], institution_id: Optional[int] = None) -> User:
     """Update user permissions (add or remove permissions)"""
-    user = get_user(db, user_id)
+    user = get_user(db, user_id, institution_id=institution_id)
     
     allowed_permissions = {"manage_billing", "view_analytics", "export_data", "manage_teachers", "manage_students"}
     cleaned_permissions = [p for p in permissions if p in allowed_permissions]

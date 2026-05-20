@@ -4,6 +4,7 @@ Routes for handling file uploads (tenant logo and profile pictures)
 from fastapi import APIRouter, Depends, Form, UploadFile, File, HTTPException, status, Header
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
+from typing import Optional
 from app.apis.uploads import (
     upload_tenant_logo,
     upload_profile_picture,
@@ -19,6 +20,9 @@ from app.schemas.users import UserResponse
 import os
 from pathlib import Path
 from app.helpers.user_roles import user_is_system_admin
+from app.helpers.tenant_scope import institution_id_for_user
+from app.dependencies.institutionDependency import get_institution_id_from_header
+from app.apis.users import get_user
 
 upload_router = APIRouter()
 
@@ -156,16 +160,16 @@ async def upload_user_profile_picture_endpoint(
     user_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """
     Upload profile picture for a specific user (admin/secretary/super_admin only)
     
     The uploaded file will be prefixed with the tenant domain for easy sorting and fetching.
     """
-    # Get the target user to check institution_id
-    from app.apis.users import get_user
-    target_user = get_user(db=db, user_id=user_id)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    target_user = get_user(db=db, user_id=user_id, institution_id=institution_id)
     
     # Check if admin is trying to upload for a user from a different institution
     if not user_is_system_admin(current_user):
@@ -205,14 +209,14 @@ def delete_profile_picture_endpoint(
 def delete_user_profile_picture_endpoint(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN))
+    current_user: User = Depends(require_any_role(UserRole.ADMIN, UserRole.SECRETARY, UserRole.SUPER_ADMIN)),
+    header_institution_id: Optional[int] = Depends(get_institution_id_from_header),
 ):
     """
     Delete profile picture for a specific user (admin/secretary/super_admin only)
     """
-    # Get the target user to check institution_id
-    from app.apis.users import get_user
-    target_user = get_user(db=db, user_id=user_id)
+    institution_id = institution_id_for_user(current_user, header_institution_id=header_institution_id)
+    target_user = get_user(db=db, user_id=user_id, institution_id=institution_id)
     
     # Check if admin is trying to delete for a user from a different institution
     if not user_is_system_admin(current_user):

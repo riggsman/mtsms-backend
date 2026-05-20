@@ -10,6 +10,7 @@ from app.models.tenant_settings import TenantSettings
 from app.schemas.schedules import ScheduleRequest, ScheduleUpdate, ScheduleResponse, CourseInfo, InstructorInfo
 from app.exceptions import NotFoundError
 from app.helpers.pagination import paginate_query
+from app.helpers.tenant_scope import scoped_get_by_id, institution_id_from_user
 from app.helpers.activity_logger import log_create_activity, log_update_activity, log_delete_activity
 from datetime import datetime
 
@@ -138,19 +139,13 @@ def _enrich_schedule_data(db: Session, schedule: Schedule) -> Dict[str, Any]:
         "payroll_clock_out_code": payroll_out_code,
     }
 
-def get_schedule(db: Session, schedule_id: int) -> Schedule:
-    """Get a schedule by ID"""
-    schedule = db.query(Schedule).filter(
-        Schedule.id == schedule_id,
-        Schedule.deleted_at.is_(None)
-    ).first()
-    if not schedule:
-        raise NotFoundError(f"Schedule with ID {schedule_id} not found")
-    return schedule
+def get_schedule(db: Session, schedule_id: int, institution_id: Optional[int] = None) -> Schedule:
+    """Get a schedule by ID, optionally scoped to institution_id."""
+    return scoped_get_by_id(db, Schedule, schedule_id, institution_id, not_found_label="Schedule")
 
-def get_schedule_with_enriched_data(db: Session, schedule_id: int) -> ScheduleResponse:
+def get_schedule_with_enriched_data(db: Session, schedule_id: int, institution_id: Optional[int] = None) -> ScheduleResponse:
     """Get a schedule by ID with enriched course and instructor data"""
-    schedule = get_schedule(db, schedule_id)
+    schedule = get_schedule(db, schedule_id, institution_id=institution_id)
     enriched_data = _enrich_schedule_data(db, schedule)
     
     # Create ScheduleResponse with enriched data
@@ -246,9 +241,10 @@ def get_schedules_with_enriched_data(
     
     return enriched_schedules, total
 
-def update_schedule(db: Session, schedule_id: int, schedule_update: ScheduleUpdate, current_user: Optional[User] = None) -> Schedule:
+def update_schedule(db: Session, schedule_id: int, schedule_update: ScheduleUpdate, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> Schedule:
     """Update a schedule"""
-    schedule = get_schedule(db, schedule_id)
+    scoped_id = institution_id_from_user(current_user, institution_id)
+    schedule = get_schedule(db, schedule_id, institution_id=scoped_id)
     
     update_data = schedule_update.dict(exclude_unset=True)
     for field, value in update_data.items():
@@ -275,9 +271,10 @@ def update_schedule(db: Session, schedule_id: int, schedule_update: ScheduleUpda
     
     return schedule
 
-def delete_schedule(db: Session, schedule_id: int, current_user: Optional[User] = None) -> bool:
+def delete_schedule(db: Session, schedule_id: int, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> bool:
     """Soft delete a schedule"""
-    schedule = get_schedule(db, schedule_id)
+    scoped_id = institution_id_from_user(current_user, institution_id)
+    schedule = get_schedule(db, schedule_id, institution_id=scoped_id)
     schedule_name = f"{schedule.course_name} - {schedule.day} {schedule.start_time}-{schedule.end_time}"
     institution_id = schedule.institution_id
     schedule.deleted_at = datetime.utcnow()

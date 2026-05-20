@@ -5,6 +5,7 @@ from app.models.user import User
 from app.schemas.teachers import TeacherRequest, TeacherResponse, TeacherUpdate
 from app.exceptions import NotFoundError, ConflictError, ValidationError
 from app.helpers.pagination import paginate_query
+from app.helpers.tenant_scope import scoped_get_by_id, institution_id_from_user
 from app.helpers.activity_logger import log_create_activity, log_update_activity, log_delete_activity, get_user_display_name
 from app.services.email_service import EmailService
 from app.helpers.async_helper import run_async_safe
@@ -44,8 +45,10 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
     
     # Check if email already exists in teachers table
     existing_teacher = db.query(Teacher).filter(Teacher.email == teacher.email).first()
-    if existing_teacher:
-        raise ConflictError(f"Teacher with email {teacher.email} already exists")
+    if existing_teacher and existing_teacher.institution_id == institution_id:
+        raise ConflictError(f"Teacher with email {teacher.email} already exists for this institution.")
+    # if existing_teacher.email and existing_teacher.institution_id != institution_id:
+    #     raise ConflictError(f"Teacher with email {teacher.email} already exists")
     
     # Check if employee_id already exists
     existing_teacher = db.query(Teacher).filter(Teacher.employee_id == final_employee_id).first()
@@ -54,8 +57,8 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
     
     # Check if user with this email already exists
     existing_user = db.query(User).filter(User.email == teacher.email).first()
-    if existing_user:
-        raise ConflictError(f"User with email {teacher.email} already exists. Please use a different email.")
+    if existing_user and existing_user.institution_id == institution_id:
+        raise ConflictError(f"User with email {teacher.email} already exists for this institution {institution_id}  {existing_user.institution_id}. Please use a different email.")
     
     # Create teacher record (username lives on User, not Teacher)
     _exclude = {'institution_id', 'designation', 'title', 'username', 'employee_id'}
@@ -128,7 +131,7 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
             global_db.close()
     except Exception:
         pass  # If we can't get institution name, continue without it
-
+    print("INSTITUTION NAME FOR REGISTERED LECTURER ", institution_name)
     run_async_safe(
         EmailService.send_lecturer_registration_email(
             lecturer_name=lecturer_name,
@@ -159,15 +162,9 @@ def create_teacher(db: Session, teacher: TeacherRequest, current_user: Optional[
     return new_teacher
 
 
-def get_teacher(db: Session, teacher_id: int) -> Teacher:
-    """Get a teacher by ID"""
-    teacher = db.query(Teacher).filter(
-        Teacher.id == teacher_id,
-        Teacher.deleted_at.is_(None)
-    ).first()
-    if not teacher:
-        raise NotFoundError(f"Teacher with ID {teacher_id} not found")
-    return teacher
+def get_teacher(db: Session, teacher_id: int, institution_id: Optional[int] = None) -> Teacher:
+    """Get a teacher by ID, optionally scoped to institution_id."""
+    return scoped_get_by_id(db, Teacher, teacher_id, institution_id, not_found_label="Teacher")
 
 
 def get_teachers(
@@ -192,9 +189,10 @@ def get_teachers(
     return paginate_query(query, page=(skip // limit) + 1, page_size=limit)
 
 
-def update_teacher(db: Session, teacher_id: int, teacher_update: TeacherUpdate, current_user: Optional[User] = None) -> Teacher:
+def update_teacher(db: Session, teacher_id: int, teacher_update: TeacherUpdate, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> Teacher:
     """Update a teacher"""
-    teacher = get_teacher(db, teacher_id)
+    scoped_id = institution_id_from_user(current_user, institution_id)
+    teacher = get_teacher(db, teacher_id, institution_id=scoped_id)
     
     dump = getattr(teacher_update, "model_dump", None)
     if callable(dump):
@@ -290,9 +288,10 @@ def update_teacher(db: Session, teacher_id: int, teacher_update: TeacherUpdate, 
     return teacher
 
 
-def delete_teacher(db: Session, teacher_id: int, current_user: Optional[User] = None) -> bool:
+def delete_teacher(db: Session, teacher_id: int, current_user: Optional[User] = None, institution_id: Optional[int] = None) -> bool:
     """Soft delete a teacher"""
-    teacher = get_teacher(db, teacher_id)
+    scoped_id = institution_id_from_user(current_user, institution_id)
+    teacher = get_teacher(db, teacher_id, institution_id=scoped_id)
     teacher_name = f"{teacher.firstname} {teacher.lastname} ({teacher.employee_id})"
     institution_id = getattr(teacher, 'institution_id', None) or (current_user.institution_id if current_user else None)
     from datetime import datetime

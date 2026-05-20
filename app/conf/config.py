@@ -10,7 +10,7 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # Database Configuration
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "mysql+pymysql://root@localhost:3306/mtsms")  #3306
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "mysql+pymysql://root@edusphere-db:3306/mtsms")  #3306
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
@@ -31,14 +31,23 @@ class Settings(BaseSettings):
     SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USER: str = os.getenv("SMTP_USER", "")
-    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "pjun iplg ctrq zywy")
     SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "")
     SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "EduSphere")
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True").lower() == "true"
     EMAIL_ENABLED: bool = os.getenv("EMAIL_ENABLED", "False").lower() == "true"
 
     # Logging
+    # log_dir = path.join(path.dirname(path.dirname(__file__)), "helpers", "logs")
+    # _LOG_FILE = path.join(log_dir, "app.log")
+    # os.makedirs(log_dir, exist_ok=True)
+    # if not path.exists(_LOG_FILE):
+    #     with open(_LOG_FILE, 'w', encoding='utf-8') as f:
+    #         f.write("")  # Create empty file
+    # LOG_FILE: str = path.join(log_dir, "app.log")
     LOG_FILE: str = path.join(path.dirname(path.dirname(__file__)), "helpers", "logs", "app.log")
+    
+    
 
     # Firebase Admin (FCM server-side). Use path to service account JSON, or raw JSON for containers.
     FIREBASE_SERVICE_ACCOUNT_PATH: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "")

@@ -228,9 +228,68 @@ def _get_or_create_singleton(db: Session) -> SystemSettings:
     return settings
 
 
+def _firebase_config_from_settings(settings: SystemSettings) -> Optional[FirebaseMessagingConfig]:
+    if not (
+        settings.firebase_messaging_enabled
+        or settings.firebase_api_key
+        or settings.firebase_auth_domain
+        or settings.firebase_project_id
+        or settings.firebase_messaging_sender_id
+        or settings.firebase_app_id
+        or settings.firebase_vapid_key
+    ):
+        return None
+    return FirebaseMessagingConfig(
+        enabled=settings.firebase_messaging_enabled,
+        apiKey=settings.firebase_api_key,
+        authDomain=settings.firebase_auth_domain,
+        projectId=settings.firebase_project_id,
+        messagingSenderId=settings.firebase_messaging_sender_id,
+        appId=settings.firebase_app_id,
+        vapidKey=settings.firebase_vapid_key,
+        storageBucket=settings.firebase_storage_bucket,
+        measurementId=settings.firebase_measurement_id,
+        serviceAccountUploaded=settings.firebase_service_account_uploaded,
+    )
+
+
+def _build_system_settings_response(
+    settings: SystemSettings,
+    *,
+    firebase_cfg: Optional[FirebaseMessagingConfig] = None,
+) -> SystemSettingsResponse:
+    return SystemSettingsResponse(
+        id=settings.id,
+        maintenanceMode=settings.maintenance_mode,
+        allowNewRegistrations=settings.allow_new_registrations,
+        maxTenants=settings.max_tenants,
+        sessionTimeout=settings.session_timeout,
+        emailNotifications=settings.email_notifications,
+        cacheTimeout=getattr(settings, "cache_timeout", 5),
+        inactivityTimeout=getattr(settings, "inactivity_timeout", 5),
+        maintenanceCheckInterval=getattr(settings, "maintenance_check_interval", 60),
+        accessTokenExpireMinutes=getattr(settings, "access_token_expire_minutes", 60) or 60,
+        refreshTokenExpireDays=getattr(settings, "refresh_token_expire_days", 7) or 7,
+        logoUrl=getattr(settings, "logo_url", None),
+        cacheVersion=getattr(settings, "cache_version", "1"),
+        firebaseMessaging=firebase_cfg if firebase_cfg is not None else _firebase_config_from_settings(settings),
+        platformSupportEmail=getattr(settings, "platform_support_email", None),
+        platformSupportPhone=getattr(settings, "platform_support_phone", None),
+        platformSupportHours=getattr(settings, "platform_support_hours", None),
+        created_at=settings.created_at,
+        updated_at=settings.updated_at,
+    )
+
+
+def _serialize_settings_response(response: SystemSettingsResponse) -> dict:
+    """Return every settings field for the admin UI (include nulls)."""
+    return response.model_dump(mode="json", exclude_none=False)
+
+
 @system_settings.get(
     "/system/settings",
     response_model=SystemSettingsResponse,
+    response_model_exclude_none=False,
 )
 def get_system_settings(
     db: Session = Depends(get_db_session),
@@ -290,25 +349,15 @@ def get_system_settings(
             serviceAccountUploaded=settings.firebase_service_account_uploaded if settings else False,
         )
 
-    return SystemSettingsResponse(
-        id=settings.id,
-        maintenanceMode=settings.maintenance_mode,
-        allowNewRegistrations=settings.allow_new_registrations,
-        maxTenants=settings.max_tenants,
-        sessionTimeout=settings.session_timeout,
-        emailNotifications=settings.email_notifications,
-        cacheTimeout=getattr(settings, "cache_timeout", 5),
-        inactivityTimeout=getattr(settings, "inactivity_timeout", 5),
-        maintenanceCheckInterval=getattr(settings, "maintenance_check_interval", 60),
-        firebaseMessaging=firebase_cfg,
-        created_at=settings.created_at,
-        updated_at=settings.updated_at,
+    return _serialize_settings_response(
+        _build_system_settings_response(settings, firebase_cfg=firebase_cfg)
     )
 
 
 @system_settings.put(
     "/system/settings",
     response_model=SystemSettingsResponse,
+    response_model_exclude_none=False,
 )
 def update_system_settings(
     payload: SystemSettingsRequest,
@@ -343,6 +392,20 @@ def update_system_settings(
         settings.inactivity_timeout = payload.inactivityTimeout
     if payload.maintenanceCheckInterval is not None:
         settings.maintenance_check_interval = payload.maintenanceCheckInterval
+    if payload.accessTokenExpireMinutes is not None:
+        settings.access_token_expire_minutes = payload.accessTokenExpireMinutes
+    if payload.refreshTokenExpireDays is not None:
+        settings.refresh_token_expire_days = payload.refreshTokenExpireDays
+
+    if payload.platformSupportEmail is not None:
+        email = (payload.platformSupportEmail or "").strip()
+        settings.platform_support_email = email or None
+    if payload.platformSupportPhone is not None:
+        phone = (payload.platformSupportPhone or "").strip()
+        settings.platform_support_phone = phone or None
+    if payload.platformSupportHours is not None:
+        hours = (payload.platformSupportHours or "").strip()
+        settings.platform_support_hours = hours or None
 
     if payload.firebaseMessaging is not None:
         fm = payload.firebaseMessaging
@@ -378,42 +441,7 @@ def update_system_settings(
             detail=f"Failed to save system settings: {str(e)}"
         )
 
-    firebase_cfg: Optional[FirebaseMessagingConfig] = None
-    if settings.firebase_messaging_enabled or any([
-        settings.firebase_api_key,
-        settings.firebase_auth_domain,
-        settings.firebase_project_id,
-        settings.firebase_messaging_sender_id,
-        settings.firebase_app_id,
-        settings.firebase_vapid_key,
-    ]):
-        firebase_cfg = FirebaseMessagingConfig(
-            enabled=settings.firebase_messaging_enabled,
-            apiKey=settings.firebase_api_key,
-            authDomain=settings.firebase_auth_domain,
-            projectId=settings.firebase_project_id,
-            messagingSenderId=settings.firebase_messaging_sender_id,
-            appId=settings.firebase_app_id,
-            vapidKey=settings.firebase_vapid_key,
-            storageBucket=settings.firebase_storage_bucket,
-            measurementId=settings.firebase_measurement_id,
-            serviceAccountUploaded=settings.firebase_service_account_uploaded,
-        )
-
-    return SystemSettingsResponse(
-        id=settings.id,
-        maintenanceMode=settings.maintenance_mode,
-        allowNewRegistrations=settings.allow_new_registrations,
-        maxTenants=settings.max_tenants,
-        sessionTimeout=settings.session_timeout,
-        emailNotifications=settings.email_notifications,
-        cacheTimeout=getattr(settings, "cache_timeout", 5),
-        inactivityTimeout=getattr(settings, "inactivity_timeout", 5),
-        maintenanceCheckInterval=getattr(settings, "maintenance_check_interval", 60),
-        firebaseMessaging=firebase_cfg,
-        created_at=settings.created_at,
-        updated_at=settings.updated_at,
-    )
+    return _serialize_settings_response(_build_system_settings_response(settings))
 
 
 @system_settings.post(

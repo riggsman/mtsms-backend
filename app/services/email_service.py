@@ -94,6 +94,7 @@ class EmailService:
             else:
                 # Port 587 or other ports use STARTTLS
                 # Use SMTP class for better control over STARTTLS
+                print("SENDER EMAIL ",settings.SMTP_USER, settings.SMTP_PASSWORD)
                 async with aiosmtplib.SMTP(
                     hostname=settings.SMTP_HOST,
                     port=settings.SMTP_PORT,
@@ -1186,7 +1187,7 @@ If you suspect your account has been compromised, please contact your administra
         text_content = f"""
             Role Changed Successfully
             
-            Dear {user.username},
+            Dear {user.username.upper()},
             
             This is to confirm that your role has been updated {change_info}.
             
@@ -1197,7 +1198,7 @@ If you suspect your account has been compromised, please contact your administra
 
         send_email_background(
             to_email=user.email,
-            subject=f'Your {app_label} account has been updated',
+            subject=f'{app_label} ACCOUNT UPDATE',
             html_content=html_content,
             text_content=text_content,
             from_name=institution_name or settings.APP_NAME

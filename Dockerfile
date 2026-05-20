@@ -1,7 +1,3 @@
-# MTSMS Backend — FastAPI + Alembic
-# Build:  docker build -t mtsms-api ./mtsms-backend
-# Run:    docker run -p 8000:8000 --env-file .env.docker mtsms-api
-
 FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -11,12 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        gcc \
-        default-libmysqlclient-dev \
-        pkg-config \
-        curl \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc default-libmysqlclient-dev pkg-config curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -24,8 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p uploads/tenant_logos uploads/system \
-    && chmod +x docker-entrypoint.sh
+# Fix line endings and permissions
+RUN apt-get update && apt-get install -y dos2unix \
+    && dos2unix docker-entrypoint.sh \
+    && chmod +x docker-entrypoint.sh \
+    && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 8000
 

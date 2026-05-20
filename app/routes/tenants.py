@@ -521,7 +521,12 @@ async def suspend_tenant_route(
 ):
     """Suspend tenant (inactive + reason). System admin only."""
     check_system_admin(current_user)
-    return suspend_tenant(db=db, tenant_id=tenant_id, reason=body.reason)
+    return suspend_tenant(
+        db=db,
+        tenant_id=tenant_id,
+        reason=body.reason,
+        actor_user_id=current_user.id,
+    )
 
 
 @tenant.post("/tenants/{tenant_id}/resume", response_model=TenantResponse)
@@ -532,7 +537,7 @@ async def resume_tenant_route(
 ):
     """Re-activate a suspended tenant. System admin only."""
     check_system_admin(current_user)
-    return resume_tenant(db=db, tenant_id=tenant_id)
+    return resume_tenant(db=db, tenant_id=tenant_id, actor_user_id=current_user.id)
 
 
 @tenant.delete("/tenants/{tenant_id}", status_code=204)

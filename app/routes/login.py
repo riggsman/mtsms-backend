@@ -112,6 +112,7 @@ async def login_otp_request(
     tenant_name: str = Depends(get_tenant),
     db: Session = Depends(get_db),
 ):
+    print("EMAIL LOGIN REQUEST CONTENT ", body)
     """Send a one-time sign-in code to the user's registered email."""
     ip_address, user_agent = _client_meta(request)
     return await request_login_otp(
