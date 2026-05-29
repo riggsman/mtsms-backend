@@ -539,69 +539,49 @@ def get_tenants_matrix(
 ) -> dict[str, Any]:
     start, end = _parse_range(from_date, to_date)
     tenants = db.query(Tenant).all()
-    rows = []
 
+    def _counts_by_tenant(model, *filters):
+        q = (
+            db.query(model.tenant_id, func.count())
+            .filter(
+                model.created_at >= start,
+                model.created_at <= end,
+                *filters,
+            )
+            .group_by(model.tenant_id)
+        )
+        return {tid: int(cnt) for tid, cnt in q.all() if tid is not None}
+
+    login_failures = _counts_by_tenant(
+        LoginAuditEvent,
+        LoginAuditEvent.outcome == "failure",
+    )
+    emails_sent = _counts_by_tenant(
+        PlatformEmailEvent,
+        PlatformEmailEvent.status.in_(("SENT", "DELIVERED")),
+    )
+    emails_failed = _counts_by_tenant(
+        PlatformEmailEvent,
+        PlatformEmailEvent.status.in_(("FAILED", "BOUNCED")),
+    )
+    api_requests = _counts_by_tenant(ApiRequestLog)
+    otp_generated = _counts_by_tenant(
+        OtpAuditEvent,
+        OtpAuditEvent.event_type == "generated",
+    )
+
+    rows = []
     for tenant in tenants:
         tid = tenant.id
-        login_failures = (
-            db.query(LoginAuditEvent)
-            .filter(
-                LoginAuditEvent.tenant_id == tid,
-                LoginAuditEvent.outcome == "failure",
-                LoginAuditEvent.created_at >= start,
-                LoginAuditEvent.created_at <= end,
-            )
-            .count()
-        )
-        emails_sent = (
-            db.query(PlatformEmailEvent)
-            .filter(
-                PlatformEmailEvent.tenant_id == tid,
-                PlatformEmailEvent.status.in_(("SENT", "DELIVERED")),
-                PlatformEmailEvent.created_at >= start,
-                PlatformEmailEvent.created_at <= end,
-            )
-            .count()
-        )
-        emails_failed = (
-            db.query(PlatformEmailEvent)
-            .filter(
-                PlatformEmailEvent.tenant_id == tid,
-                PlatformEmailEvent.status.in_(("FAILED", "BOUNCED")),
-                PlatformEmailEvent.created_at >= start,
-                PlatformEmailEvent.created_at <= end,
-            )
-            .count()
-        )
-        api_requests = (
-            db.query(ApiRequestLog)
-            .filter(
-                ApiRequestLog.tenant_id == tid,
-                ApiRequestLog.created_at >= start,
-                ApiRequestLog.created_at <= end,
-            )
-            .count()
-        )
-        otp_generated = (
-            db.query(OtpAuditEvent)
-            .filter(
-                OtpAuditEvent.tenant_id == tid,
-                OtpAuditEvent.event_type == "generated",
-                OtpAuditEvent.created_at >= start,
-                OtpAuditEvent.created_at <= end,
-            )
-            .count()
-        )
-
         rows.append(
             {
                 "tenantId": tid,
                 "tenantName": tenant.name,
-                "loginFailures": login_failures,
-                "emailsSent": emails_sent,
-                "emailsFailed": emails_failed,
-                "apiRequests": api_requests,
-                "otpGenerated": otp_generated,
+                "loginFailures": login_failures.get(tid, 0),
+                "emailsSent": emails_sent.get(tid, 0),
+                "emailsFailed": emails_failed.get(tid, 0),
+                "apiRequests": api_requests.get(tid, 0),
+                "otpGenerated": otp_generated.get(tid, 0),
             }
         )
 

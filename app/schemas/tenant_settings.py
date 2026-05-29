@@ -1,5 +1,10 @@
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any
+
+from app.constants.program_levels import (
+    DEFAULT_ENABLED_PROGRAM_LEVELS,
+    sanitize_enabled_program_levels,
+)
 from datetime import datetime
 import json
 
@@ -22,6 +27,11 @@ class TenantSettingsRequest(BaseModel):
     email_reminder_time: Optional[int] = None  # Minutes before class to send reminder
     branches_enabled: Optional[bool] = None  # Multi-campus mode
     payroll_auto_generate_codes: Optional[bool] = None
+    current_semester_id: Optional[int] = Field(None, ge=1)
+    enabled_program_levels: Optional[List[str]] = Field(
+        None,
+        description="Degree program levels offered by this tenant (HND, BTECH, BSC, MTECH, MSC, MBA)",
+    )
 
 
 class TenantSettings(BaseModel):
@@ -33,6 +43,10 @@ class TenantSettings(BaseModel):
     email_reminder_time: Optional[int] = 30  # Minutes before class to send reminder (default: 30)
     branches_enabled: bool = False
     payroll_auto_generate_codes: bool = False
+    current_semester_id: Optional[int] = None
+    enabled_program_levels: List[str] = Field(
+        default_factory=lambda: list(DEFAULT_ENABLED_PROGRAM_LEVELS)
+    )
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -59,6 +73,8 @@ class TenantSettings(BaseModel):
                 'email_reminder_time': getattr(data, 'email_reminder_time', 30),
                 'branches_enabled': getattr(data, 'branches_enabled', False),
                 'payroll_auto_generate_codes': getattr(data, 'payroll_auto_generate_codes', False),
+                'current_semester_id': getattr(data, 'current_semester_id', None),
+                'enabled_program_levels': getattr(data, 'enabled_program_levels', None),
                 'created_at': getattr(data, 'created_at', None),
                 'updated_at': getattr(data, 'updated_at', None)
             }
@@ -77,6 +93,17 @@ class TenantSettings(BaseModel):
             # Ensure email_reminder_time has a default value if None
             if data.get('email_reminder_time') is None:
                 data['email_reminder_time'] = 30
+
+            raw_levels = data.get('enabled_program_levels')
+            if isinstance(raw_levels, str):
+                try:
+                    raw_levels = json.loads(raw_levels)
+                except (json.JSONDecodeError, TypeError):
+                    raw_levels = None
+            data['enabled_program_levels'] = sanitize_enabled_program_levels(
+                raw_levels if isinstance(raw_levels, list) else None,
+                default_all=True,
+            )
         
         return data
 

@@ -10,7 +10,21 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # Database Configuration
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "mysql+pymysql://root@edusphere-db:3306/mtsms")  #3306
+    MYSQL_PASS:str = os.getenv("MYSQL_PASS")
+    MYSQL_USER:str = os.getenv("MYSQL_USER")
+    MYSQL_DB_NAME:str = os.getenv("MYSQL_DB_NAME")
+    MYSQL_HOST:str = os.getenv("MYSQL_HOST")
+
+    DATABASE_URL: str = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASS}@{MYSQL_HOST}:3306/{MYSQL_DB_NAME}" #3306
+
+    # Database connection pool (global / shared engine)
+    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "20"))
+    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "30"))
+    DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "60"))
+    DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "3600"))
+    # Smaller pools for per-tenant engines in multi-tenant mode
+    TENANT_DB_POOL_SIZE: int = int(os.getenv("TENANT_DB_POOL_SIZE", "2"))
+    TENANT_DB_MAX_OVERFLOW: int = int(os.getenv("TENANT_DB_MAX_OVERFLOW", "3"))
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
@@ -26,6 +40,10 @@ class Settings(BaseSettings):
     APP_NAME: str = os.getenv("APP_NAME", "EduSphere")
     APP_VERSION: str = os.getenv("APP_VERSION", "1.0.0")
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
+
+    # When true, startup_seed truncates ALL tables (except alembic_version) then seeds a dev superadmin.
+    # Default false — never wipe production data on app restart.
+    STARTUP_TRUNCATE_ALL: bool = os.getenv("STARTUP_TRUNCATE_ALL", "false").lower() == "true"
     
     # Email Configuration
     SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -38,16 +56,7 @@ class Settings(BaseSettings):
     EMAIL_ENABLED: bool = os.getenv("EMAIL_ENABLED", "False").lower() == "true"
 
     # Logging
-    # log_dir = path.join(path.dirname(path.dirname(__file__)), "helpers", "logs")
-    # _LOG_FILE = path.join(log_dir, "app.log")
-    # os.makedirs(log_dir, exist_ok=True)
-    # if not path.exists(_LOG_FILE):
-    #     with open(_LOG_FILE, 'w', encoding='utf-8') as f:
-    #         f.write("")  # Create empty file
-    # LOG_FILE: str = path.join(log_dir, "app.log")
     LOG_FILE: str = path.join(path.dirname(path.dirname(__file__)), "helpers", "logs", "app.log")
-    
-    
 
     # Firebase Admin (FCM server-side). Use path to service account JSON, or raw JSON for containers.
     FIREBASE_SERVICE_ACCOUNT_PATH: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "")

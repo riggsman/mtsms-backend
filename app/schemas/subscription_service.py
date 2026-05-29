@@ -27,6 +27,11 @@ class SubscriptionServiceRequest(BaseModel):
         default=False,
         description="Whether this service is available on the premium plan",
     )
+    max_free_download: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Free usage count before payment is required",
+    )
     features: Optional[Dict[str, Any]] = Field(
         None, description="Service features as JSON object"
     )
@@ -47,6 +52,7 @@ class SubscriptionServiceResponse(BaseModel):
     is_active: bool
     freemium_enabled: bool
     premium_enabled: bool
+    max_free_download: Optional[int] = None
     features: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: Optional[datetime] = None

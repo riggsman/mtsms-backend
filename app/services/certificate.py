@@ -11,6 +11,13 @@ from app.models.student_record import StudentRecord
 from app.models.tenant import Tenant
 from app.models.department import Department
 from app.models.course import Course
+from app.services.gpa_service import get_grade_point_from_letter
+from app.services.document_verification import (
+    build_result_slip_verification_payload,
+    build_transcript_verification_payload,
+    draw_verification_qr_on_canvas,
+    issue_verified_document,
+)
 
 
 def get_student_data(db: Session, student_no: str, institution_id: int):
@@ -36,13 +43,21 @@ def get_student_data(db: Session, student_no: str, institution_id: int):
         #         School.deleted_at.is_(None)
         #     ).first()
         
+        def _pdf_text(value, fallback="N/A"):
+            if value is None:
+                return fallback
+            text = str(value).strip()
+            return text if text else fallback
+
         return {
-            "student_no": student.student_id,
-            "surname": student.lastname,
-            "other_names": f"{student.firstname} {student.middlename or ''}".strip(),
-            "date_of_birth": student.dob,
-            "sex": student.gender,
-            "date_of_enrolment": student.created_at.strftime("%d %B %Y") if student.created_at else "N/A",
+            "student_no": _pdf_text(student.student_id),
+            "surname": _pdf_text(student.lastname),
+            "other_names": _pdf_text(f"{student.firstname} {student.middlename or ''}".strip()),
+            "date_of_birth": _pdf_text(student.dob),
+            "sex": _pdf_text(student.gender),
+            "date_of_enrolment": (
+                student.created_at.strftime("%d %B %Y") if student.created_at else "N/A"
+            ),
             "faculty": department.name if department else "N/A",  # School table dropped, using department
             "department": department.name if department else "N/A",
             "major": department.name if department else "N/A",
@@ -77,7 +92,9 @@ def get_student_courses(db: Session, student_no: str, institution_id: int, semes
     for record in records:
         course = courses_by_code.get(record.course_code) if record.course_code else None
         course_name = course.name if course else (record.course_code or "N/A")
-        credit_value = float(course.credits) if course and course.credits else 3
+        credit_value = float(record.course_weight or 0) if record.course_weight else (
+            float(course.credits) if course and course.credits else 3
+        )
         ca_mark = float(record.assignment or 0) + float(record.ca or 0)
         exam_mark = float(record.exam or 0)
         total_mark = float(record.total_score or 0) if record.total_score else (ca_mark + exam_mark)
@@ -113,13 +130,8 @@ def get_institution_data(db: Session, institution_id: int):
     }
 
 
-def get_grade_points(grade: str) -> float:
-    grade_map = {
-        "A": 4.0, "B+": 3.5, "B": 3.0, "C+": 2.5, "C": 2.0,
-        "D+": 1.5, "D": 1.0, "F": 0.0, "X": 0.0, "W": 0.0,
-        "I": 0.0, "N": 0.0, "P": 0.0
-    }
-    return grade_map.get(grade.upper() if grade else "", 0.0)
+def get_grade_points(db: Session, institution_id: int, grade: str) -> float:
+    return get_grade_point_from_letter(db, institution_id, grade)
 
 
 def generate_transcript_pdf(
@@ -128,6 +140,14 @@ def generate_transcript_pdf(
     institution_id: int,
     output_filename: str = None
 ):
+    student_row = db.query(Student).filter(
+        Student.student_id == student_no,
+        Student.institution_id == institution_id,
+        Student.deleted_at.is_(None),
+    ).first()
+    if not student_row:
+        raise ValueError(f"No student found with ID: {student_no}")
+
     student_data = get_student_data(db, student_no, institution_id)
     if not student_data:
         raise ValueError(f"No student found with ID: {student_no}")
@@ -138,6 +158,10 @@ def generate_transcript_pdf(
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
+    c.setTitle("Academic Transcript")
+    c.setAuthor(institution.get("name") or "MTSMS")
+    c.setSubject(f"Official academic transcript for student {student_no}")
+    c.setCreator("MTSMS Certificate Service")
     
     current_date = datetime.now().strftime("%d %B %Y")
     
@@ -243,6 +267,7 @@ def generate_transcript_pdf(
     total_gpa_credits_attempted = 0
     total_gpa_credits_earned = 0
     total_points = 0
+    semester_gpa = 0.0
     
     if not student_courses:
         # Show message when no courses are available
@@ -286,7 +311,35 @@ def generate_transcript_pdf(
         
         semester_gpa = total_points / total_gpa_credits_attempted if total_gpa_credits_attempted > 0 else 0.0
         c.drawString(1.2 * inch, y_row, f"CUMULATIVE GPA: {semester_gpa:.2f}")
-    
+
+    verification_payload = build_transcript_verification_payload(
+        student_data,
+        institution,
+        student_courses,
+        date_printed=current_date,
+        totals={
+            "cumulative_gpa": semester_gpa if student_courses else None,
+            "total_credits_attempted": total_credits_attempted if student_courses else 0,
+            "total_credits_earned": total_credits_earned if student_courses else 0,
+        },
+    )
+    verification_token, qr_png = issue_verified_document(
+        db,
+        document_type="transcript",
+        institution_id=institution_id,
+        student_no=student_no,
+        payload=verification_payload,
+        student_id=student_row.id,
+    )
+    draw_verification_qr_on_canvas(
+        c,
+        verification_token,
+        x=width - 1.15 * inch,
+        y=0.45 * inch,
+        strict=True,
+        png_bytes=qr_png,
+    )
+
     c.setFont("Helvetica-Bold", 10)
     c.drawString(width / 2 - 20, 0.7 * inch, "Registrar")
     c.setFont("Helvetica", 10)
@@ -311,6 +364,14 @@ def generate_result_slip_pdf(
     semester: str = None,
     output_filename: str = None
 ):
+    student_row = db.query(Student).filter(
+        Student.student_id == student_no,
+        Student.institution_id == institution_id,
+        Student.deleted_at.is_(None),
+    ).first()
+    if not student_row:
+        raise ValueError(f"No student found with ID: {student_no}")
+
     student_data = get_student_data(db, student_no, institution_id)
     if not student_data:
         raise ValueError(f"No student found with ID: {student_no}")
@@ -324,6 +385,10 @@ def generate_result_slip_pdf(
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
+    c.setTitle("Statement of Results")
+    c.setAuthor(institution.get("name") or "MTSMS")
+    c.setSubject(f"Official result slip for student {student_no}")
+    c.setCreator("MTSMS Certificate Service")
     
     current_date = datetime.now().strftime("%d %B %Y")
     
@@ -367,6 +432,7 @@ def generate_result_slip_pdf(
     total_ca = 0
     total_exam = 0
     total_mark = 0
+    semester_gpa = 0.0
     
     if not student_courses:
         # Show message when no courses are available
@@ -416,7 +482,37 @@ def generate_result_slip_pdf(
         c.setFont("Helvetica", 9)
         c.drawString(0.5 * inch, y_row, f"Date: {current_date}")
         c.drawString(5.5 * inch, y_row, "Signature: ____________")
-    
+
+    verification_payload = build_result_slip_verification_payload(
+        student_data,
+        institution,
+        student_courses,
+        semester=target_semester,
+        date_printed=current_date,
+        semester_gpa=semester_gpa if student_courses else 0.0,
+        total_credits=total_credits if student_courses else 0,
+        total_ca=total_ca if student_courses else 0,
+        total_exam=total_exam if student_courses else 0,
+        grand_total=total_mark if student_courses else 0,
+    )
+    verification_token, qr_png = issue_verified_document(
+        db,
+        document_type="result_slip",
+        institution_id=institution_id,
+        student_no=student_no,
+        payload=verification_payload,
+        student_id=student_row.id,
+        semester=target_semester if target_semester != "N/A" else semester,
+    )
+    draw_verification_qr_on_canvas(
+        c,
+        verification_token,
+        x=width - 1.15 * inch,
+        y=0.45 * inch,
+        strict=True,
+        png_bytes=qr_png,
+    )
+
     # Footer
     c.setFont("Helvetica-Bold", 8)
     c.drawString(0.5 * inch, 0.5 * inch, "This is an official document. Keep it safe.")

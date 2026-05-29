@@ -11,7 +11,8 @@
       "menuIds": [
         "fee-payment"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "quick_download_results",
@@ -24,7 +25,8 @@
       "menuIds": [],
       "nameAliases": [
         "Download Results"
-      ]
+      ],
+      "monetization_enabled": true
     },
     {
       "id": "quick_submit_assignment",
@@ -35,7 +37,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "quick_view_timetable",
@@ -46,7 +49,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "personal_view_profile",
@@ -57,7 +61,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "personal_edit_profile",
@@ -68,7 +73,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "personal_update_contact",
@@ -79,7 +85,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "academic_view_grades",
@@ -93,7 +100,8 @@
         "grades",
         "academics"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "academic_view_gpa",
@@ -104,7 +112,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "academic_performance_charts",
@@ -115,7 +124,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "academic_teacher_remarks",
@@ -126,7 +136,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "timetable_view_schedule",
@@ -139,7 +150,8 @@
       "menuIds": [
         "schedule"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "timetable_exam_timetable",
@@ -152,7 +164,8 @@
       "menuIds": [
         "academic-calendar"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "timetable_class_reminders",
@@ -163,7 +176,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "assignments_view",
@@ -176,7 +190,8 @@
       "menuIds": [
         "assignments"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "assignments_submit",
@@ -187,7 +202,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "assignments_view_status",
@@ -198,7 +214,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "assignments_upload_homework",
@@ -209,7 +226,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "results_view",
@@ -220,7 +238,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": true
     },
     {
       "id": "results_download_report_card",
@@ -233,7 +252,8 @@
       "menuIds": [],
       "nameAliases": [
         "Download Report Card"
-      ]
+      ],
+      "monetization_enabled": true
     },
     {
       "id": "results_transcript_access",
@@ -244,7 +264,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": true
     },
     {
       "id": "results_historical",
@@ -257,7 +278,8 @@
       "menuIds": [
         "academic-history"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "fees_view_balance",
@@ -272,7 +294,8 @@
         "school-fee-status",
         "finance"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_finance_management",
@@ -282,8 +305,14 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["finance-management"],
-      "nameAliases": ["Finance", "Finance Management"]
+      "menuIds": [
+        "finance-management"
+      ],
+      "nameAliases": [
+        "Finance",
+        "Finance Management"
+      ],
+      "monetization_enabled": false
     },
     {
       "id": "fees_payment_history",
@@ -294,7 +323,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "fees_download_receipts",
@@ -305,7 +335,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": true
     },
     {
       "id": "fees_mobile_money",
@@ -316,7 +347,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "announcements_view",
@@ -329,7 +361,8 @@
       "menuIds": [
         "announcements"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "announcements_class_updates",
@@ -340,7 +373,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "announcements_alerts",
@@ -351,7 +385,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "docs_course_materials",
@@ -364,7 +399,8 @@
       "menuIds": [
         "notes"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "docs_school_documents",
@@ -375,7 +411,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": true
     },
     {
       "id": "docs_certificates",
@@ -386,7 +423,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": true
     },
     {
       "id": "comm_message_teachers",
@@ -399,7 +437,8 @@
       "menuIds": [
         "student-chats"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "comm_notifications_inbox",
@@ -410,7 +449,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "comm_chat_forum",
@@ -421,7 +461,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "attendance_view",
@@ -434,7 +475,8 @@
       "menuIds": [
         "attendance"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "attendance_percentage",
@@ -445,7 +487,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "attendance_absence_history",
@@ -456,7 +499,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "settings_update_profile",
@@ -467,7 +511,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "settings_change_password",
@@ -478,7 +523,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "settings_notification_prefs",
@@ -489,7 +535,8 @@
       "premium_enabled": true,
       "service_state_enabled": true,
       "menuIds": [],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_class_management",
@@ -499,8 +546,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["class-management"],
-      "nameAliases": []
+      "menuIds": [
+        "class-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_user_management",
@@ -510,8 +560,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["user-management"],
-      "nameAliases": []
+      "menuIds": [
+        "user-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_lecturer_management",
@@ -521,8 +574,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["lecturer-management"],
-      "nameAliases": []
+      "menuIds": [
+        "lecturer-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_department_management",
@@ -532,8 +588,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["department-management"],
-      "nameAliases": []
+      "menuIds": [
+        "department-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_school_management",
@@ -543,8 +602,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["school-management"],
-      "nameAliases": []
+      "menuIds": [
+        "school-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_specialization_management",
@@ -554,8 +616,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["specialization-management"],
-      "nameAliases": []
+      "menuIds": [
+        "specialization-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_course_management",
@@ -565,8 +630,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["courses"],
-      "nameAliases": []
+      "menuIds": [
+        "courses"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_course_performance",
@@ -576,8 +644,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["course-performance"],
-      "nameAliases": []
+      "menuIds": [
+        "course-performance"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_hr_management",
@@ -587,8 +658,13 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["hr-management"],
-      "nameAliases": ["HR Management"]
+      "menuIds": [
+        "hr-management"
+      ],
+      "nameAliases": [
+        "HR Management"
+      ],
+      "monetization_enabled": false
     },
     {
       "id": "admin_records_management",
@@ -598,8 +674,13 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["records-management"],
-      "nameAliases": ["Records Management"]
+      "menuIds": [
+        "records-management"
+      ],
+      "nameAliases": [
+        "Records Management"
+      ],
+      "monetization_enabled": false
     },
     {
       "id": "admin_student_management",
@@ -609,8 +690,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["students"],
-      "nameAliases": []
+      "menuIds": [
+        "students"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_student_payments",
@@ -620,8 +704,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["student-payments"],
-      "nameAliases": []
+      "menuIds": [
+        "student-payments"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_admission",
@@ -631,8 +718,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["admission"],
-      "nameAliases": []
+      "menuIds": [
+        "admission"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_payroll_report",
@@ -642,8 +732,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["payroll-report"],
-      "nameAliases": []
+      "menuIds": [
+        "payroll-report"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_inventory",
@@ -653,8 +746,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["inventory"],
-      "nameAliases": []
+      "menuIds": [
+        "inventory"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_push_messages",
@@ -664,8 +760,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["push-messages"],
-      "nameAliases": []
+      "menuIds": [
+        "push-messages"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_correspondence",
@@ -675,8 +774,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["correspondence"],
-      "nameAliases": []
+      "menuIds": [
+        "correspondence"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_complaints",
@@ -686,8 +788,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["complaints"],
-      "nameAliases": []
+      "menuIds": [
+        "complaints"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_take_attendance",
@@ -697,8 +802,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["take-attendance"],
-      "nameAliases": []
+      "menuIds": [
+        "take-attendance"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_performance_tracking",
@@ -708,8 +816,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["performance-tracking"],
-      "nameAliases": []
+      "menuIds": [
+        "performance-tracking"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_activities",
@@ -719,8 +830,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["activities"],
-      "nameAliases": []
+      "menuIds": [
+        "activities"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "staff_student_records",
@@ -730,8 +844,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["student-records"],
-      "nameAliases": []
+      "menuIds": [
+        "student-records"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "staff_payroll_clock",
@@ -741,8 +858,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["payroll-clock"],
-      "nameAliases": []
+      "menuIds": [
+        "payroll-clock"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "nav_overview",
@@ -752,8 +872,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["overview"],
-      "nameAliases": []
+      "menuIds": [
+        "overview"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "nav_settings",
@@ -763,8 +886,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["settings"],
-      "nameAliases": []
+      "menuIds": [
+        "settings"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "student_help_desk",
@@ -774,8 +900,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["help-desk"],
-      "nameAliases": []
+      "menuIds": [
+        "help-desk"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "student_school_email",
@@ -785,8 +914,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["school-email"],
-      "nameAliases": []
+      "menuIds": [
+        "school-email"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "student_course_management",
@@ -801,7 +933,8 @@
         "course-registration",
         "my-courses"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "student_id_card",
@@ -811,8 +944,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["id-card"],
-      "nameAliases": []
+      "menuIds": [
+        "id-card"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "student_fee_structure",
@@ -822,8 +958,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["fee-structure"],
-      "nameAliases": []
+      "menuIds": [
+        "fee-structure"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "student_messages",
@@ -833,8 +972,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["student-messages"],
-      "nameAliases": []
+      "menuIds": [
+        "student-messages"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_schedule_management",
@@ -844,8 +986,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["schedule-management"],
-      "nameAliases": []
+      "menuIds": [
+        "schedule-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_assignment_management",
@@ -855,8 +1000,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["assignment-management"],
-      "nameAliases": []
+      "menuIds": [
+        "assignment-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_notes_management",
@@ -866,8 +1014,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["admin-notes"],
-      "nameAliases": []
+      "menuIds": [
+        "admin-notes"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "admin_fee_structure",
@@ -877,8 +1028,13 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["fee-structure-management"],
-      "nameAliases": ["Fee Structure"]
+      "menuIds": [
+        "fee-structure-management"
+      ],
+      "nameAliases": [
+        "Fee Structure"
+      ],
+      "monetization_enabled": false
     },
     {
       "id": "admin_installments",
@@ -888,8 +1044,13 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["installments-management"],
-      "nameAliases": ["Installments"]
+      "menuIds": [
+        "installments-management"
+      ],
+      "nameAliases": [
+        "Installments"
+      ],
+      "monetization_enabled": false
     },
     {
       "id": "staff_my_classes",
@@ -899,8 +1060,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["staff-my-classes"],
-      "nameAliases": []
+      "menuIds": [
+        "staff-my-classes"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "staff_assignment_management",
@@ -910,8 +1074,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["staff-assignment-management"],
-      "nameAliases": []
+      "menuIds": [
+        "staff-assignment-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "staff_performance_tracking",
@@ -921,8 +1088,11 @@
       "freemium_enabled": false,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["staff-performance-tracking"],
-      "nameAliases": []
+      "menuIds": [
+        "staff-performance-tracking"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "staff_complaints",
@@ -932,8 +1102,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["staff-complaints"],
-      "nameAliases": []
+      "menuIds": [
+        "staff-complaints"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "student_complaints",
@@ -948,7 +1121,8 @@
         "file-complaint",
         "complaints"
       ],
-      "nameAliases": []
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "staff_announcements",
@@ -958,8 +1132,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["staff-announcements"],
-      "nameAliases": []
+      "menuIds": [
+        "staff-announcements"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "parent_announcements",
@@ -969,8 +1146,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["parent-announcements"],
-      "nameAliases": []
+      "menuIds": [
+        "parent-announcements"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "system_tenant_management",
@@ -980,8 +1160,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["tenant-management"],
-      "nameAliases": []
+      "menuIds": [
+        "tenant-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "system_user_management",
@@ -991,8 +1174,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["system-user-management"],
-      "nameAliases": []
+      "menuIds": [
+        "system-user-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "system_client_messages",
@@ -1002,8 +1188,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["client-messages"],
-      "nameAliases": []
+      "menuIds": [
+        "client-messages"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "system_fee_structure",
@@ -1013,8 +1202,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["system-fee-structure"],
-      "nameAliases": []
+      "menuIds": [
+        "system-fee-structure"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "system_financial_overview",
@@ -1024,8 +1216,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["financial-overview"],
-      "nameAliases": []
+      "menuIds": [
+        "financial-overview"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "system_subscription_management",
@@ -1035,8 +1230,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["subscription-management"],
-      "nameAliases": []
+      "menuIds": [
+        "subscription-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "system_specialization_management",
@@ -1046,8 +1244,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["system-specialization-management"],
-      "nameAliases": []
+      "menuIds": [
+        "system-specialization-management"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "system_database_config",
@@ -1057,8 +1258,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["database-config"],
-      "nameAliases": []
+      "menuIds": [
+        "database-config"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "system_analytics",
@@ -1068,8 +1272,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["system-analytics"],
-      "nameAliases": []
+      "menuIds": [
+        "system-analytics"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     },
     {
       "id": "system_settings",
@@ -1079,8 +1286,11 @@
       "freemium_enabled": true,
       "premium_enabled": true,
       "service_state_enabled": true,
-      "menuIds": ["system-settings"],
-      "nameAliases": []
+      "menuIds": [
+        "system-settings"
+      ],
+      "nameAliases": [],
+      "monetization_enabled": false
     }
   ]
 }

@@ -17,9 +17,9 @@ def normalize_program_fee_level(raw: Optional[str]) -> Optional[str]:
     if not s:
         return None
     u = s.upper()
-    if u in {"BACHELOR", "BACHELORS"}:
+    if u in {"BACHELOR", "BACHELORS", "BSC", "BTECH"}:
         return "DEGREE"
-    if u == "MASTER":
+    if u in {"MASTER", "MASTERS", "MSC", "MBA", "MTECH"}:
         return "MASTERS"
     if u in PROGRAM_FEE_LEVELS:
         return u

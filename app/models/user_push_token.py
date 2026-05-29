@@ -2,7 +2,7 @@ import datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 
 
 class UserPushToken(BaseModel_Base):
@@ -11,7 +11,7 @@ class UserPushToken(BaseModel_Base):
     """
 
     __tablename__ = "user_push_tokens"
-    __table_args__ = (UniqueConstraint("user_id", "token", name="uq_user_push_tokens_user_token"),)
+    # __table_args__ = (UniqueConstraint("user_id", "token", name="uq_user_push_tokens_user_token"),)
 
     id = Column(Integer, primary_key=True)
     institution_id = Column(Integer, nullable=True, index=True)

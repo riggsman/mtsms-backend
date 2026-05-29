@@ -1,13 +1,19 @@
+import re
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from io import BytesIO
+from app.database.base import get_db_session
 from app.dependencies.tenantDependency import get_db
 from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.models.user import User
 from app.models.role import UserRole
 from app.models.student import Student
 from app.exceptions import NotFoundError
+from app.schemas.document_verification import DocumentPublicVerificationResponse
+from app.services.document_verification import get_public_document_verification
 import os
 from pathlib import Path
 
@@ -21,6 +27,50 @@ except ImportError as e:
     CERTIFICATE_SERVICE_AVAILABLE = False
 
 certificate_router = APIRouter()
+
+
+def _pdf_attachment_headers(filename: str) -> dict:
+    """Safe Content-Disposition for PDF downloads (ASCII fallback + UTF-8 filename)."""
+    raw = (filename or "document.pdf").strip() or "document.pdf"
+    if not raw.lower().endswith(".pdf"):
+        raw = f"{raw}.pdf"
+    ascii_name = re.sub(r"[^\w.\-]", "_", raw).strip("._") or "document.pdf"
+    encoded = quote(raw)
+    return {
+        "Content-Disposition": f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded}',
+        "Access-Control-Expose-Headers": "Content-Disposition",
+    }
+
+
+def _pdf_streaming_response(pdf_buffer, filename: str) -> StreamingResponse:
+    return StreamingResponse(
+        iter([pdf_buffer.getvalue()]),
+        media_type="application/pdf",
+        headers=_pdf_attachment_headers(filename),
+    )
+
+
+@certificate_router.get(
+    "/certificates/public/verify",
+    response_model=DocumentPublicVerificationResponse,
+)
+def public_document_verification(
+    v: str = Query(..., min_length=8, description="Verification token from document QR code"),
+    db: Session = Depends(get_db_session),
+):
+    """
+    Public verification for transcripts and result slips (no authentication).
+    Returns a read-only snapshot of the issued document when the token is valid.
+    """
+    try:
+        return get_public_document_verification(db, v)
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No matching official document was found for this verification link.",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @certificate_router.api_route("/result-slip", methods=["OPTIONS"])
@@ -99,15 +149,8 @@ def generate_transcript(
             institution_id=institution_id
         )
         
-        filename = f"transcript_{student_no}_{student.lastname}.pdf"
-        
-        return StreamingResponse(
-            iter([pdf_buffer.getvalue()]),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
-        )
+        filename = f"transcript_{student_no}.pdf"
+        return _pdf_streaming_response(pdf_buffer, filename)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -172,13 +215,7 @@ def generate_result_slip(
             filename += f"_{semester}"
         filename += ".pdf"
         
-        return StreamingResponse(
-            iter([pdf_buffer.getvalue()]),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
-        )
+        return _pdf_streaming_response(pdf_buffer, filename)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -241,15 +278,8 @@ def generate_my_transcript(
         )
         print(f"[Certificate] Transcript PDF generated successfully")
         
-        filename = f"transcript_{student.student_id}_{student.lastname}.pdf"
-        
-        return StreamingResponse(
-            iter([pdf_buffer.getvalue()]),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
-        )
+        filename = f"transcript_{student.student_id}.pdf"
+        return _pdf_streaming_response(pdf_buffer, filename)
     except ValueError as e:
         print(f"[Certificate] ValueError: {e}")
         raise HTTPException(
@@ -320,16 +350,9 @@ def generate_my_result_slip(
         
         filename = f"result_slip_{student.student_id}"
         if semester:
-            filename += f"_{semester}"
+            filename += f"_{re.sub(r'[^\\w.\\-]', '_', str(semester))}"
         filename += ".pdf"
-        
-        return StreamingResponse(
-            iter([pdf_buffer.getvalue()]),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
-        )
+        return _pdf_streaming_response(pdf_buffer, filename)
     except ValueError as e:
         print(f"[Certificate] ValueError: {e}")
         raise HTTPException(

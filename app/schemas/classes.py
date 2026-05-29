@@ -12,6 +12,10 @@ class ClassRequest(BaseModel):
     department_id: Optional[int] = None
     academic_year_id: Optional[int] = None
     capacity: Optional[int] = None
+    degree_program_codes: Optional[list] = Field(
+        default=None,
+        description="For HI: degree program codes this application level applies to (e.g. HND, BSC).",
+    )
 
 class ClassUpdate(BaseModel):
     name: Optional[str] = None
@@ -22,6 +26,7 @@ class ClassUpdate(BaseModel):
     academic_year_id: Optional[int] = None
     capacity: Optional[int] = None
     category: Optional[str] = None  # e.g., 'Science', 'Arts', etc.
+    degree_program_codes: Optional[list] = None
 
 class ClassResponse(BaseModel):
     id: int
@@ -39,6 +44,7 @@ class ClassResponse(BaseModel):
     capacity: Optional[int] = None
     created_at: Optional[datetime] = None  # Made optional for default classes
     updated_at: Optional[datetime] = None
+    degree_program_codes: Optional[list] = None
 
     class Config:
         from_attributes = True

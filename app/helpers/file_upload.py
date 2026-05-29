@@ -303,20 +303,24 @@ def delete_file(file_path: str) -> bool:
         return False
 
 
-def get_file_url(relative_path: str, base_url: str = "/api/v1/uploads", request: Optional[Request] = None) -> str:
+def get_file_url(relative_path: str, base_url: str | None = None, request: Optional[Request] = None) -> str:
     """
     Generate a URL for accessing an uploaded file
     
     Args:
         relative_path: Relative path from uploads directory
-        base_url: Base URL for file access (default: "/api/v1/uploads")
+        base_url: Base URL for file access (default: {API_V1_PREFIX}/uploads)
         request: Optional FastAPI Request object to generate full URL
         
     Returns:
         Full URL to access the file (absolute URL if request provided, otherwise uses API_BASE_URL or current working directory)
     """
     import os
+    from app.conf.api_prefix import API_V1_PREFIX
     from app.conf.config import get_settings
+
+    if base_url is None:
+        base_url = f"{API_V1_PREFIX}/uploads"
     
     # Normalize path separators
     normalized_path = relative_path.replace('\\', '/')

@@ -116,6 +116,9 @@ def set_tenant_services_activated(
     db.add(tenant)
     db.commit()
     db.refresh(tenant)
+    from app.helpers.tenant_activation_cache import invalidate_tenant_access_cache
+
+    invalidate_tenant_access_cache(tenant.id)
     return tenant
 
 

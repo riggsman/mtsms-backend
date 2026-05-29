@@ -23,8 +23,115 @@ from app.helpers.user_roles import user_is_system_admin
 from app.helpers.tenant_scope import institution_id_for_user
 from app.dependencies.institutionDependency import get_institution_id_from_header
 from app.apis.users import get_user
+from app.apis.students import resolve_student_for_logged_in_user
+from app.models.student_uploaded_document import StudentUploadedDocument
+from datetime import datetime
 
 upload_router = APIRouter()
+MAX_STUDENT_DOCUMENTS = 5
+MAX_STUDENT_DOCUMENT_SIZE_BYTES = 100 * 1024
+ID_CARD_SIDES = {"front", "back"}
+
+
+def _read_and_compress_document(file: UploadFile) -> tuple[bytes, str, str]:
+    from app.helpers.file_upload import ALLOWED_DOCUMENT_FILE_TYPES
+    from app.helpers.document_compression import compress_image_to_limit, compress_pdf_to_limit
+
+    if not file.content_type or file.content_type not in ALLOWED_DOCUMENT_FILE_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported document type")
+
+    content = file.file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File is empty")
+
+    final_content = content
+    final_mime = file.content_type
+    final_name = file.filename or "document"
+
+    if len(content) > MAX_STUDENT_DOCUMENT_SIZE_BYTES:
+        content_type = file.content_type or ""
+        try:
+            if content_type.startswith("image/"):
+                final_content, final_mime, final_name = compress_image_to_limit(
+                    content,
+                    final_name,
+                    MAX_STUDENT_DOCUMENT_SIZE_BYTES,
+                )
+            elif content_type == "application/pdf":
+                final_content, final_mime, final_name = compress_pdf_to_limit(
+                    content,
+                    final_name,
+                    MAX_STUDENT_DOCUMENT_SIZE_BYTES,
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="File exceeds 100KB. Automatic compression is available for image and PDF documents only.",
+                )
+        except HTTPException:
+            raise
+        except ValueError as exc:
+            message = str(exc)
+            if "image" in message.lower():
+                detail = "Could not compress image to 100KB. Please upload a smaller file."
+            elif "pdf" in message.lower():
+                detail = "Could not compress PDF to 100KB. Please upload a smaller file."
+            else:
+                detail = message
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+        except Exception as exc:
+            if content_type.startswith("image/"):
+                detail = "Could not process image for compression."
+            elif content_type == "application/pdf":
+                detail = "Could not process PDF for compression."
+            else:
+                detail = "Could not process document for compression."
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+
+    if len(final_content) > MAX_STUDENT_DOCUMENT_SIZE_BYTES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Final file size exceeds 100KB")
+    return final_content, final_mime, final_name
+
+
+def _persist_student_document(
+    *,
+    db: Session,
+    student,
+    file_name: str,
+    file_mime: str,
+    content: bytes,
+    file_kind: str,
+    file_side: Optional[str] = None,
+) -> StudentUploadedDocument:
+    from app.helpers.file_upload import generate_filename, sanitize_domain
+    from app.apis.uploads import get_tenant_domain
+
+    tenant_domain = get_tenant_domain(student.institution_id)
+    upload_subdir = "student_documents"
+    sanitized_domain = sanitize_domain(tenant_domain)
+    filename = generate_filename(file_name, sanitized_domain, "student_document")
+    base_upload_dir = os.path.join(os.getcwd(), "uploads")
+    upload_dir = os.path.join(base_upload_dir, upload_subdir)
+    os.makedirs(upload_dir, exist_ok=True)
+    file_path = os.path.join(upload_dir, filename)
+    with open(file_path, "wb") as f:
+        f.write(content)
+    relative_path = os.path.join(upload_subdir, filename).replace("\\", "/")
+
+    row = StudentUploadedDocument(
+        institution_id=student.institution_id,
+        student_id=student.id,
+        file_name=file_name,
+        file_path=relative_path,
+        mime_type=file_mime,
+        file_size=len(content),
+        document_kind=file_kind,
+        document_side=file_side,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 
 # General file upload endpoint
 @upload_router.post("/uploads/files")
@@ -65,7 +172,7 @@ async def upload_file_endpoint(
     )
     
     # Generate file URL
-    file_url = get_file_url(relative_path, base_url="/api/v1/uploads")
+    file_url = get_file_url(relative_path)
     
     return {
         "file_url": file_url,
@@ -73,6 +180,275 @@ async def upload_file_endpoint(
         "filename": file.filename,
         "category": category
     }
+
+
+@upload_router.get("/student/documents")
+def list_student_documents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    from app.helpers.file_upload import get_file_url
+
+    student = resolve_student_for_logged_in_user(db, current_user)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not found")
+
+    rows = (
+        db.query(StudentUploadedDocument)
+        .filter(
+            StudentUploadedDocument.institution_id == student.institution_id,
+            StudentUploadedDocument.student_id == student.id,
+            StudentUploadedDocument.document_kind == "general",
+            StudentUploadedDocument.deleted_at.is_(None),
+        )
+        .order_by(StudentUploadedDocument.created_at.desc())
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "file_name": row.file_name,
+                "file_path": row.file_path,
+                "file_url": get_file_url(row.file_path),
+                "mime_type": row.mime_type,
+                "file_size": row.file_size,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
+        "max_documents": MAX_STUDENT_DOCUMENTS,
+        "max_file_size_bytes": MAX_STUDENT_DOCUMENT_SIZE_BYTES,
+    }
+
+
+@upload_router.post("/student/documents")
+async def upload_student_document(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    from app.helpers.file_upload import get_file_url
+
+    student = resolve_student_for_logged_in_user(db, current_user)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not found")
+
+    current_count = (
+        db.query(StudentUploadedDocument)
+        .filter(
+            StudentUploadedDocument.institution_id == student.institution_id,
+            StudentUploadedDocument.student_id == student.id,
+            StudentUploadedDocument.document_kind == "general",
+            StudentUploadedDocument.deleted_at.is_(None),
+        )
+        .count()
+    )
+    if current_count >= MAX_STUDENT_DOCUMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Maximum of {MAX_STUDENT_DOCUMENTS} documents allowed",
+        )
+
+    final_content, final_mime, final_name = _read_and_compress_document(file)
+    row = _persist_student_document(
+        db=db,
+        student=student,
+        file_name=final_name,
+        file_mime=final_mime,
+        content=final_content,
+        file_kind="general",
+    )
+
+    return {
+        "id": row.id,
+        "file_name": row.file_name,
+        "file_url": get_file_url(row.file_path),
+        "file_path": row.file_path,
+        "mime_type": row.mime_type,
+        "file_size": row.file_size,
+        "max_documents": MAX_STUDENT_DOCUMENTS,
+        "max_file_size_bytes": MAX_STUDENT_DOCUMENT_SIZE_BYTES,
+    }
+
+
+@upload_router.delete("/student/documents/{document_id}")
+def delete_student_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    from app.helpers.file_upload import delete_file
+
+    student = resolve_student_for_logged_in_user(db, current_user)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not found")
+
+    row = (
+        db.query(StudentUploadedDocument)
+        .filter(
+            StudentUploadedDocument.id == document_id,
+            StudentUploadedDocument.institution_id == student.institution_id,
+            StudentUploadedDocument.student_id == student.id,
+            StudentUploadedDocument.document_kind == "general",
+            StudentUploadedDocument.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    try:
+        delete_file(row.file_path)
+    except Exception:
+        pass
+    row.deleted_at = datetime.utcnow()
+    db.add(row)
+    db.commit()
+    return {"deleted": True, "document_id": document_id}
+
+
+@upload_router.get("/student/id-card")
+def get_student_id_card_files(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    from app.helpers.file_upload import get_file_url
+
+    student = resolve_student_for_logged_in_user(db, current_user)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not found")
+    rows = (
+        db.query(StudentUploadedDocument)
+        .filter(
+            StudentUploadedDocument.institution_id == student.institution_id,
+            StudentUploadedDocument.student_id == student.id,
+            StudentUploadedDocument.document_kind == "id_card",
+            StudentUploadedDocument.deleted_at.is_(None),
+        )
+        .all()
+    )
+    side_map = {"front": None, "back": None}
+    for row in rows:
+        if row.document_side in side_map:
+            side_map[row.document_side] = {
+                "id": row.id,
+                "file_name": row.file_name,
+                "file_url": get_file_url(row.file_path),
+                "file_size": row.file_size,
+                "mime_type": row.mime_type,
+            }
+    return {"front": side_map["front"], "back": side_map["back"], "max_file_size_bytes": MAX_STUDENT_DOCUMENT_SIZE_BYTES}
+
+
+@upload_router.post("/student/id-card")
+async def upload_student_id_card_side(
+    side: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    from app.helpers.file_upload import get_file_url, delete_file
+
+    side = str(side or "").strip().lower()
+    if side not in ID_CARD_SIDES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="side must be 'front' or 'back'")
+    student = resolve_student_for_logged_in_user(db, current_user)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not found")
+
+    existing = (
+        db.query(StudentUploadedDocument)
+        .filter(
+            StudentUploadedDocument.institution_id == student.institution_id,
+            StudentUploadedDocument.student_id == student.id,
+            StudentUploadedDocument.document_kind == "id_card",
+            StudentUploadedDocument.document_side == side,
+            StudentUploadedDocument.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if existing:
+        try:
+            delete_file(existing.file_path)
+        except Exception:
+            pass
+        existing.deleted_at = datetime.utcnow()
+        db.add(existing)
+        db.commit()
+
+    final_content, final_mime, final_name = _read_and_compress_document(file)
+    row = _persist_student_document(
+        db=db,
+        student=student,
+        file_name=final_name,
+        file_mime=final_mime,
+        content=final_content,
+        file_kind="id_card",
+        file_side=side,
+    )
+    return {
+        "side": side,
+        "id": row.id,
+        "file_name": row.file_name,
+        "file_url": get_file_url(row.file_path),
+        "file_size": row.file_size,
+    }
+
+
+@upload_router.get("/student/id-card/download")
+def download_student_id_card_pdf(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    import io
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+    from fastapi.responses import StreamingResponse
+
+    student = resolve_student_for_logged_in_user(db, current_user)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not found")
+    rows = (
+        db.query(StudentUploadedDocument)
+        .filter(
+            StudentUploadedDocument.institution_id == student.institution_id,
+            StudentUploadedDocument.student_id == student.id,
+            StudentUploadedDocument.document_kind == "id_card",
+            StudentUploadedDocument.deleted_at.is_(None),
+        )
+        .all()
+    )
+    side_paths = {row.document_side: row.file_path for row in rows if row.document_side in ID_CARD_SIDES}
+    if not side_paths.get("front") or not side_paths.get("back"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload both front and back ID card images first")
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    for side in ("front", "back"):
+        abs_path = os.path.join(os.getcwd(), "uploads", side_paths[side])
+        if not os.path.exists(abs_path):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{side} image file not found")
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(40, height - 40, f"Student ID Card - {side.capitalize()}")
+        image = ImageReader(abs_path)
+        img_w, img_h = image.getSize()
+        max_w = width - 80
+        max_h = height - 120
+        ratio = min(max_w / img_w, max_h / img_h)
+        draw_w = img_w * ratio
+        draw_h = img_h * ratio
+        x = (width - draw_w) / 2
+        y = (height - draw_h) / 2 - 20
+        c.drawImage(image, x, y, width=draw_w, height=draw_h, preserveAspectRatio=True, mask="auto")
+        c.showPage()
+    c.save()
+    buffer.seek(0)
+    filename = f"id_card_{student.student_id or student.id}.pdf"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
 
 
 @upload_router.post("/uploads/tenant-logo", response_model=TenantSettingsResponse)

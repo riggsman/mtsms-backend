@@ -3,6 +3,7 @@ from typing import Optional
 from app.models.tenant import Tenant
 from app.models.tenant_settings import TenantSettings
 from app.schemas.tenant_settings import TenantSettingsRequest, TenantSettingsResponse, MatriculeFormatConfig
+from app.constants.program_levels import sanitize_enabled_program_levels
 from app.exceptions import NotFoundError, ValidationError
 import json
 import datetime
@@ -67,6 +68,13 @@ def create_or_update_tenant_settings(
             existing.branches_enabled = settings.branches_enabled
         if settings.payroll_auto_generate_codes is not None:
             existing.payroll_auto_generate_codes = bool(settings.payroll_auto_generate_codes)
+        if settings.current_semester_id is not None:
+            existing.current_semester_id = settings.current_semester_id
+        if settings.enabled_program_levels is not None:
+            existing.enabled_program_levels = sanitize_enabled_program_levels(
+                settings.enabled_program_levels,
+                default_all=False,
+            )
         db.commit()
         db.refresh(existing)
         return existing
@@ -80,6 +88,11 @@ def create_or_update_tenant_settings(
             email_reminder_time=settings.email_reminder_time if settings.email_reminder_time is not None else 30,
             branches_enabled=bool(settings.branches_enabled) if settings.branches_enabled is not None else False,
             payroll_auto_generate_codes=bool(settings.payroll_auto_generate_codes) if settings.payroll_auto_generate_codes is not None else False,
+            current_semester_id=settings.current_semester_id,
+            enabled_program_levels=sanitize_enabled_program_levels(
+                settings.enabled_program_levels,
+                default_all=True,
+            ),
         )
         db.add(new_settings)
         db.commit()

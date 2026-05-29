@@ -31,7 +31,7 @@ class SchoolFee(DefaultBase):
     id = Column(Integer, primary_key=True)
     school_id = Column(Integer, ForeignKey("schools.id", ondelete="CASCADE"), nullable=False)
     level = Column(String(20), nullable=False)
-    academic_year_id = Column(Integer, nullable=True, index=True)
+    academic_year_id = Column(Integer, nullable=True)
     fee_amount = Column(Numeric(10, 2), nullable=False, default=0)
     fee_deadline = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)

@@ -1,47 +1,8 @@
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, event
-from app.database.sessionManager import BaseModel_Base
-import datetime
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.sql import text
+"""Backward-compat shim for legacy import path.
 
-# class Class(BaseModel_Base):
-#     __tablename__ = "classes"
-#     id = Column(Integer, primary_key=True)
-#     institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
-#     name = Column(String(100), nullable=False)
-#     code = Column(String(20), nullable=False)  # Class code (e.g., "l1", "L1", "Level 1")
-#     institution_level = Column(String(10), nullable=False, default="HI")  # HI (Higher Institution) or SI (Secondary Institution)
-#     category = Column(String(50), nullable=True)  # Category for the class
-#     is_custom = Column(Boolean, default=True, nullable=False)  # True for custom classes, False for default classes
-#     level_id = Column(Integer, nullable=True)  # Made nullable as it may not be needed with code
-#     department_id = Column(Integer, nullable=True)
-#     academic_year_id = Column(Integer, nullable=True)  # Made nullable for flexibility
-#     capacity = Column(Integer, nullable=True)
-#     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
-#     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=True)
-#     deleted_at = Column(DateTime, nullable=True)  # Soft delete
+Canonical model lives in `app.models.classes`.
+"""
 
+from app.models.classes import Class
 
-class Class(BaseModel_Base):
-    __tablename__ = "classes"
-    
-    id = Column(Integer, primary_key=True)
-    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
-    name = Column(String(100), nullable=False)
-    code = Column(String(20), nullable=False)  # e.g., "L1", "Level 1", "F1"
-    institution_level = Column(String(10), nullable=False, default="HI")  # HI or SI
-    category = Column(String(50), nullable=True)
-    is_custom = Column(Boolean, default=True, nullable=False)
-    level_id = Column(Integer, nullable=True)
-    department_id = Column(Integer, nullable=True)
-    academic_year_id = Column(Integer, nullable=True)
-    capacity = Column(Integer, nullable=True)
-    
-    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=True)
-    deleted_at = Column(DateTime, nullable=True)  # Soft delete support
-
-    # Optional: unique constraint to prevent duplicates per institution
-    # __table_args__ = (
-    #     UniqueConstraint('institution_id', 'code', name='uq_class_code_per_inst'),
-    # )
+__all__ = ["Class"]

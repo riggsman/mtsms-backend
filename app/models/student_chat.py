@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, Integer, DateTime, Text, ForeignKey
 import datetime
 
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 
 
 class StudentChatThread(BaseModel_Base):

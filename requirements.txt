@@ -16,6 +16,9 @@ redis
 python-jose
 aiosmtplib
 reportlab
+Pillow
+pymupdf
+qrcode[pil]
 python-docx
 beautifulsoup4
 APScheduler==3.10.4

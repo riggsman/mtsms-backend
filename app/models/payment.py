@@ -2,7 +2,7 @@
 Payment Model
 """
 from sqlalchemy import Column, String, Integer, DateTime, Numeric, ForeignKey, Index, Boolean
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 import datetime
 import uuid
 

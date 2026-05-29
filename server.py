@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import Response
+from app.conf.api_prefix import API_V1_PREFIX
 from app.database.base import DefaultBase, engine,DefaultSessionLocal
 from app.database.sessionManager import BaseModel_Base
 from app.dependencies import auth
@@ -21,6 +22,7 @@ from app.routes import (
     student_records,
     complaints,
     tenant_settings,
+    grading_methods,
     system_admin,
     system_config,
     contact,
@@ -169,141 +171,142 @@ from pathlib import Path
 # Include routers
 # Authentication routes
 app.include_router(login.login, prefix="/auth/v1", tags=["Authentication"])
-app.include_router(register_user.register, prefix="/api/v1", tags=["Registration"])
+app.include_router(register_user.register, prefix=API_V1_PREFIX, tags=["Registration"])
 
 # Core entity routes
-app.include_router(tenants.tenant, prefix="/api/v1", tags=["tenants"])
-app.include_router(students.student, prefix="/api/v1", tags=["students"])
-app.include_router(teachers.teacher, prefix="/api/v1", tags=["teachers"])
-app.include_router(courses.course, prefix="/api/v1", tags=["courses"])
-app.include_router(departments.department_router, prefix="/api/v1", tags=["departments"])
-app.include_router(specializations.specialization_router, prefix="/api/v1", tags=["specializations"])
-app.include_router(schedules.schedule, prefix="/api/v1", tags=["schedules"])
-app.include_router(activities.activity, prefix="/api/v1", tags=["activities"])
-app.include_router(users.user, prefix="/api/v1", tags=["users"])
-app.include_router(classes.class_router, prefix="/api/v1", tags=["classes"])
-app.include_router(enrollments.enrollment, prefix="/api/v1", tags=["enrollments"])
-app.include_router(student_records.student_record, prefix="/api/v1", tags=["student-records"])
+app.include_router(tenants.tenant, prefix=API_V1_PREFIX, tags=["tenants"])
+app.include_router(students.student, prefix=API_V1_PREFIX, tags=["students"])
+app.include_router(teachers.teacher, prefix=API_V1_PREFIX, tags=["teachers"])
+app.include_router(courses.course, prefix=API_V1_PREFIX, tags=["courses"])
+app.include_router(departments.department_router, prefix=API_V1_PREFIX, tags=["departments"])
+app.include_router(specializations.specialization_router, prefix=API_V1_PREFIX, tags=["specializations"])
+app.include_router(schedules.schedule, prefix=API_V1_PREFIX, tags=["schedules"])
+app.include_router(activities.activity, prefix=API_V1_PREFIX, tags=["activities"])
+app.include_router(users.user, prefix=API_V1_PREFIX, tags=["users"])
+app.include_router(classes.class_router, prefix=API_V1_PREFIX, tags=["classes"])
+app.include_router(enrollments.enrollment, prefix=API_V1_PREFIX, tags=["enrollments"])
+app.include_router(student_records.student_record, prefix=API_V1_PREFIX, tags=["student-records"])
 
 # Academic routes
-app.include_router(assignments.assignment, prefix="/api/v1", tags=["assignments"])
-app.include_router(notes.note_router, prefix="/api/v1", tags=["notes"])
-app.include_router(announcements.announcement_router, prefix="/api/v1", tags=["announcements"])
+app.include_router(assignments.assignment, prefix=API_V1_PREFIX, tags=["assignments"])
+app.include_router(notes.note_router, prefix=API_V1_PREFIX, tags=["notes"])
+app.include_router(announcements.announcement_router, prefix=API_V1_PREFIX, tags=["announcements"])
 
 # Support routes
-app.include_router(complaints.complaint, prefix="/api/v1", tags=["complaints"])
+app.include_router(complaints.complaint, prefix=API_V1_PREFIX, tags=["complaints"])
 
 # Configuration routes
-app.include_router(tenant_settings.tenant_settings_router, prefix="/api/v1", tags=["tenant-settings"])
-app.include_router(branches.router, prefix="/api/v1", tags=["branches"])
+app.include_router(tenant_settings.tenant_settings_router, prefix=API_V1_PREFIX, tags=["tenant-settings"])
+app.include_router(grading_methods.grading_methods_router, prefix=API_V1_PREFIX, tags=["grading-methods"])
+app.include_router(branches.router, prefix=API_V1_PREFIX, tags=["branches"])
 
 # File upload routes
-app.include_router(uploads.upload_router, prefix="/api/v1", tags=["uploads"])
+app.include_router(uploads.upload_router, prefix=API_V1_PREFIX, tags=["uploads"])
 
 # System admin routes (global database)
-app.include_router(system_admin.system_admin, prefix="/api/v1", tags=["system-admin"])
-app.include_router(system_config.system_config, prefix="/api/v1", tags=["system-config"])
+app.include_router(system_admin.system_admin, prefix=API_V1_PREFIX, tags=["system-admin"])
+app.include_router(system_config.system_config, prefix=API_V1_PREFIX, tags=["system-config"])
 
 # Public / general routes
-app.include_router(contact.contact, prefix="/api/v1", tags=["contact"])
+app.include_router(contact.contact, prefix=API_V1_PREFIX, tags=["contact"])
 
 # Subscription services routes
 app.include_router(
     subscription_services.subscription_services,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["subscription-services"],
 )
 
 # Service configurations routes
 app.include_router(
     service_configurations.service_configurations,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["service-configurations"],
 )
 
 app.include_router(
     feature_matrix.feature_matrix,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["feature-matrix"],
 )
 
 # Subscription plans routes
 app.include_router(
     subscription_plans.router,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["subscription-plans"],
 )
 
 # Email logs routes
-app.include_router(email_logs.router, prefix="/api/v1", tags=["email-logs"])
+app.include_router(email_logs.router, prefix=API_V1_PREFIX, tags=["email-logs"])
 
 # Reminder routes
-app.include_router(reminders.reminder_router, prefix="/api/v1", tags=["reminders"])
+app.include_router(reminders.reminder_router, prefix=API_V1_PREFIX, tags=["reminders"])
 
 # Payment routes
-app.include_router(payments.payment, prefix="/api/v1", tags=["payments"])
+app.include_router(payments.payment, prefix=API_V1_PREFIX, tags=["payments"])
 
 # Fee Structure routes
-app.include_router(fee_structure.fee_structure, prefix="/api/v1", tags=["fee-structure"])
+app.include_router(fee_structure.fee_structure, prefix=API_V1_PREFIX, tags=["fee-structure"])
 
-app.include_router(schools.router, prefix="/api/v1", tags=["schools"])
+app.include_router(schools.router, prefix=API_V1_PREFIX, tags=["schools"])
 
 # Student Payments routes
-app.include_router(student_payments.router, prefix="/api/v1", tags=["student-payments"])
+app.include_router(student_payments.router, prefix=API_V1_PREFIX, tags=["student-payments"])
 
 # Certificate routes (transcripts and result slips)
-app.include_router(certificates.certificate_router, prefix="/api/v1", tags=["certificates"])
+app.include_router(certificates.certificate_router, prefix=API_V1_PREFIX, tags=["certificates"])
 
-app.include_router(payroll.router, prefix="/api/v1", tags=["payroll"])
-app.include_router(student_dashboard.router, prefix="/api/v1", tags=["student-dashboard"])
-app.include_router(staff_dashboard.router, prefix="/api/v1", tags=["staff-dashboard"])
-app.include_router(admin_dashboard.router, prefix="/api/v1", tags=["admin-dashboard"])
+app.include_router(payroll.router, prefix=API_V1_PREFIX, tags=["payroll"])
+app.include_router(student_dashboard.router, prefix=API_V1_PREFIX, tags=["student-dashboard"])
+app.include_router(staff_dashboard.router, prefix=API_V1_PREFIX, tags=["staff-dashboard"])
+app.include_router(admin_dashboard.router, prefix=API_V1_PREFIX, tags=["admin-dashboard"])
 
 # Request management routes
-app.include_router(leave_requests.leave_router, prefix="/api/v1", tags=["leave-requests"])
-app.include_router(utility_requests.utility_router, prefix="/api/v1", tags=["utility-requests"])
+app.include_router(leave_requests.leave_router, prefix=API_V1_PREFIX, tags=["leave-requests"])
+app.include_router(utility_requests.utility_router, prefix=API_V1_PREFIX, tags=["utility-requests"])
 
 app.include_router(
     notifications.notifications_router,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["notifications"],
 )
 app.include_router(
     academic_year_management.academic_year_router,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["academic-years"],
 )
 app.include_router(
     academic_calendar.academic_calendar_router,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["academic-calendar"],
 )
 app.include_router(
     promotions.promotions_router,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["promotions"],
 )
 
 app.include_router(
     hr.hr_router,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["hr"],
 )
 
 app.include_router(
     correspondence.correspondence_router,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["correspondence"],
 )
 
 app.include_router(
     parent_portal.router,
-    prefix="/api/v1",
+    prefix=API_V1_PREFIX,
     tags=["parent-portal"],
 )
 
 # Register last so GET/PUT /system/settings always use the full system_settings table handler
-app.include_router(system_settings.system_settings, prefix="/api/v1", tags=["system-settings"])
+app.include_router(system_settings.system_settings, prefix=API_V1_PREFIX, tags=["system-settings"])
 
 # Import models to register them with metadata for table creation
 from app.models.school import School, SchoolFee
@@ -315,6 +318,10 @@ from app.models.student_year_outcome import StudentYearOutcome  # noqa: F401 —
 from app.models.student_promotion_history import StudentPromotionHistory  # noqa: F401 — register tenant metadata
 from app.models.student_course_rank import StudentCourseRank  # noqa: F401 — register tenant metadata
 from app.models.academic_calendar import AcademicCalendar  # noqa: F401 — register tenant metadata
+from app.models.verified_document import VerifiedDocument  # noqa: F401 — register tenant metadata
+from app.models.system_semester import SystemSemester  # noqa: F401 — register global metadata
+from app.models.student_service_usage import StudentServiceUsage  # noqa: F401 — register tenant metadata
+from app.models.student_uploaded_document import StudentUploadedDocument  # noqa: F401 — register tenant metadata
 from app.models.staff_document import StaffDocument  # noqa: F401
 from app.models.staff_attendance import StaffAttendance  # noqa: F401
 from app.models.communication import Communication  # noqa: F401
@@ -329,6 +336,7 @@ from app.models.platform_analytics import (  # noqa: F401
     PlatformErrorEvent,
     ApiRequestLog,
 )
+from app.models.subscription_plan import SubscriptionPlan  # noqa: F401 — register metadata
 
 # Create metadata database tables (if they don't exist)
 @app.on_event("startup")
@@ -337,9 +345,19 @@ def startup():
     BaseModel_Base.metadata.create_all(bind=engine)
     from app.database.schema_patches import ensure_schema_patches
     ensure_schema_patches(engine)
-    # Seed default data
+    # Seed default data (see app/services/startup_seed.py). Truncation only if STARTUP_TRUNCATE_ALL=true.
     with DefaultSessionLocal() as session:
         run_startup_seed(session)
+    # Ensure platform default GPA / grading scale exists after startup seed (idempotent)
+    try:
+        from app.services.gpa_service import ensure_system_default_grading_method
+        with DefaultSessionLocal() as session:
+            ensure_system_default_grading_method(session)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Could not ensure default grading method on startup: %s", e
+        )
     
     # Start schedule reminder scheduler
     try:
@@ -376,14 +394,18 @@ def shutdown():
 def health_check():
     return {"status": "ok", "message": "School Management System is running!"}
 
-@app.get("/api/v1/health", tags=["health"])
+api_v1_misc = APIRouter(tags=["health"])
+
+@api_v1_misc.get("/health")
 def api_health_check():
     return {"status": "ok", "message": "API is running!"}
 
-@app.get("/api/v1/test-cors", tags=["health"])
+
+@api_v1_misc.get("/test-cors")
 def test_cors():
     """Test endpoint to verify CORS is working"""
     return {"status": "ok", "message": "CORS test successful!"}
+
 
 # SSE endpoint for real-time cache invalidation notifications
 from fastapi.responses import StreamingResponse
@@ -393,7 +415,8 @@ import json
 # Store for SSE subscribers
 sse_subscribers = []
 
-@app.get("/api/v1/events/cache", tags=["events"])
+
+@api_v1_misc.get("/events/cache", tags=["events"])
 async def cache_events():
     """
     SSE endpoint for real-time cache invalidation events.
@@ -424,5 +447,8 @@ async def broadcast_cache_event(data):
     event_data = f"data: {json.dumps(data)}\n\n"
     # SSE is one-directional, so we just log this
     print(f"[SSE] Would broadcast: {data}")
+
+
+app.include_router(api_v1_misc, prefix=API_V1_PREFIX)
 
 print("[SERVER] Server ready")

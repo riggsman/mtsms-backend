@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import OperationalError
 
 logger = logging.getLogger(__name__)
 _patched_engine_ids: set[int] = set()
@@ -42,12 +43,21 @@ def apply_schema_patches(engine) -> None:
                 dialect = engine.dialect.name
                 logger.info("Patching school_fees: adding academic_year_id index")
                 if dialect in ("mysql", "mariadb"):
-                    conn.execute(
-                        text(
-                            "CREATE INDEX ix_school_fees_academic_year_id "
-                            "ON school_fees (academic_year_id)"
+                    try:
+                        conn.execute(
+                            text(
+                                "CREATE INDEX ix_school_fees_academic_year_id "
+                                "ON school_fees (academic_year_id)"
+                            )
                         )
-                    )
+                    except OperationalError as sql_err:
+                        orig = getattr(sql_err, "orig", None)
+                        if getattr(orig, "args", None) and orig.args[0] == 1061:
+                            logger.info(
+                                "School_fees index already exists; ignoring duplicate key error"
+                            )
+                        else:
+                            raise
                 elif dialect == "sqlite":
                     conn.execute(
                         text(

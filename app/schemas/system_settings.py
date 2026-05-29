@@ -128,6 +128,9 @@ class SystemSettingsState(BaseModel):
   cacheTimeout: Optional[int] = None
   inactivityTimeout: Optional[int] = None
   maintenanceCheckInterval: Optional[int] = None
+  platformSupportEmail: Optional[str] = None
+  platformSupportPhone: Optional[str] = None
+  platformSupportHours: Optional[str] = None
 
 
 class EffectiveTimeoutsResponse(BaseModel):

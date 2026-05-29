@@ -24,6 +24,7 @@ class StudentRecordResponse(BaseModel):
     total_score: Optional[Decimal]
     letter_grade: Optional[str]
     gpa: Optional[Decimal]
+    course_weight: Optional[Decimal] = None
     created_at: datetime
     updated_at: Optional[datetime]
 

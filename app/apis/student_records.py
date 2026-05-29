@@ -11,6 +11,7 @@ from app.helpers.activity_logger import log_create_activity, log_update_activity
 from datetime import datetime
 from app.models.academic_year import AcademicYear
 from app.services.ranking_jobs import enqueue_rank_recompute
+from app.services.gpa_service import calculate_record_grading
 
 
 def _resolve_academic_year_label(db: Session, institution_id: Optional[int]) -> str:
@@ -38,19 +39,6 @@ def _resolve_academic_year_label(db: Session, institution_id: Optional[int]) -> 
         )
     return current_year.name if current_year and current_year.name else str(datetime.utcnow().year)
 
-def calculate_grade_and_gpa(total_score: Decimal) -> tuple[str, Decimal]:
-    """Calculate letter grade and GPA from total score"""
-    if total_score >= 90:
-        return 'A', Decimal('4.0')
-    elif total_score >= 80:
-        return 'B', Decimal('3.0')
-    elif total_score >= 70:
-        return 'C', Decimal('2.0')
-    elif total_score >= 60:
-        return 'D', Decimal('1.0')
-    else:
-        return 'F', Decimal('0.0')
-
 def create_student_record(db: Session, record: StudentRecordRequest, current_user: Optional[User] = None) -> StudentRecord:
     """Create a new student record"""
     # Validate CA + Assignment doesn't exceed 30
@@ -65,9 +53,6 @@ def create_student_record(db: Session, record: StudentRecordRequest, current_use
     exam = record.exam or Decimal('0')
     total_score = ca_assignment_total + exam
     
-    # Calculate grade and GPA
-    letter_grade, gpa = calculate_grade_and_gpa(total_score)
-
     # Determine institution_id (required by model)
     institution_id = current_user.institution_id if current_user and current_user.institution_id else None
     if not institution_id:
@@ -80,6 +65,13 @@ def create_student_record(db: Session, record: StudentRecordRequest, current_use
             institution_id = student.institution_id
     if not institution_id:
         raise ValidationError("institution_id is required to create a student record")
+
+    letter_grade, gpa, course_weight, _weighted_points = calculate_record_grading(
+        db=db,
+        institution_id=institution_id,
+        total_score=total_score,
+        course_code=record.course_code,
+    )
     
     new_record = StudentRecord(
         institution_id=institution_id,
@@ -92,7 +84,8 @@ def create_student_record(db: Session, record: StudentRecordRequest, current_use
         exam=exam,
         total_score=total_score,
         letter_grade=letter_grade,
-        gpa=gpa
+        gpa=gpa,
+        course_weight=course_weight,
     )
     db.add(new_record)
     db.commit()
@@ -199,11 +192,18 @@ def update_student_record(
     # Recalculate total, grade, and GPA
     exam = Decimal(str(record.exam or 0))
     total_score = ca_assignment_total + exam
-    letter_grade, gpa = calculate_grade_and_gpa(total_score)
+    course_code = record.course_code
+    letter_grade, gpa, course_weight, _weighted_points = calculate_record_grading(
+        db=db,
+        institution_id=record.institution_id,
+        total_score=total_score,
+        course_code=course_code,
+    )
     
     record.total_score = total_score
     record.letter_grade = letter_grade
     record.gpa = gpa
+    record.course_weight = course_weight
     
     db.commit()
     db.refresh(record)

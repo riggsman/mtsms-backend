@@ -3,7 +3,7 @@ import datetime
 
 from sqlalchemy import Column, Date, DateTime, Integer, String, Text, Index
 
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 
 
 class AcademicCalendar(BaseModel_Base):

@@ -33,6 +33,7 @@ from app.models.communication import Communication
 from app.helpers.user_roles import user_has_any_role
 from app.schemas.ranking import RankingRecomputeRequest, RankingRecomputeResponse
 from app.services.ranking_jobs import enqueue_rank_recompute
+from app.services.gpa_service import calculate_cumulative_gpa, get_grade_point_from_letter
 from app.services.ranking_service import (
     build_overview_rankings_payload,
     get_course_rank_rows,
@@ -75,20 +76,8 @@ def _resolve_student(db: Session, current_user: User) -> Optional[Student]:
     return resolve_student_for_logged_in_user(db, current_user)
 
 
-def _grade_to_points(letter_grade: Optional[str]) -> float:
-    points = {
-        "A": 4.0,
-        "A-": 3.7,
-        "B+": 3.3,
-        "B": 3.0,
-        "B-": 2.7,
-        "C+": 2.3,
-        "C": 2.0,
-        "C-": 1.7,
-        "D": 1.0,
-        "F": 0.0,
-    }
-    return points.get((letter_grade or "").upper().strip(), 0.0)
+def _grade_to_points(db: Session, institution_id: int, letter_grade: Optional[str]) -> float:
+    return get_grade_point_from_letter(db, institution_id, letter_grade)
 
 
 def _safe_float(value: Any) -> float:
@@ -424,7 +413,7 @@ def get_student_grades(
     summary_records = query.all()
     record_count = len(summary_records)
     average_score = round(sum(_safe_float(r.total_score) for r in summary_records) / record_count, 2) if record_count else 0.0
-    gpa = round(sum(_safe_float(r.gpa) for r in summary_records) / record_count, 2) if record_count else 0.0
+    gpa = calculate_cumulative_gpa(summary_records)
 
     records = (
         query.order_by(StudentRecord.created_at.desc(), StudentRecord.id.desc())
@@ -527,15 +516,18 @@ def get_student_analytics(
         )
 
     gpa_trend = []
+    running_weight = 0.0
     running_points = 0.0
     for idx, r in enumerate(records, start=1):
-        running_points += _grade_to_points(r.letter_grade)
+        weight = _safe_float(r.course_weight or 1.0)
+        running_weight += weight
+        running_points += _grade_to_points(db, student.institution_id, r.letter_grade) * weight
         gpa_trend.append(
             {
                 "index": idx,
                 "course_code": r.course_code,
                 "semester": r.semester,
-                "gpa": round(running_points / idx, 2),
+                "gpa": round(running_points / running_weight, 2) if running_weight else 0.0,
             }
         )
 
@@ -680,7 +672,7 @@ def export_performance_summary(
         .all()
     )
     avg_score = round(sum(_safe_float(r.total_score) for r in records) / len(records), 2) if records else 0.0
-    avg_gpa = round(sum(_safe_float(r.gpa) for r in records) / len(records), 2) if records else 0.0
+    avg_gpa = calculate_cumulative_gpa(records)
     tenant = db.query(Tenant).filter(Tenant.id == student.institution_id).first()
     tenant_category = tenant.category if tenant else None
     rankings_payload = _build_rankings_payload_for_student(

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.subscription_service import SubscriptionService
+from app.models.service_configuration import ServiceConfiguration
 from app.models.tenant import Tenant
 from app.models.tenant_feature_entitlement import TenantFeatureEntitlement
 
@@ -130,12 +131,69 @@ def _flags_from_service(service: Optional[SubscriptionService], feat: Dict[str, 
             "enabled": bool(service.is_active),
             "freemium": bool(service.is_freemium_enabled),
             "premium": bool(service.is_premium_enabled),
+            "monetized": bool(service.is_monetized_enabled),
         }
     return {
         "enabled": bool(feat.get("service_state_enabled", False)),
         "freemium": bool(feat.get("freemium_enabled", False)),
         "premium": bool(feat.get("premium_enabled", False)),
+        "monetized": bool(feat.get("monetization_enabled", False)),
     }
+
+
+def _amount_from_service(service: Optional[SubscriptionService]) -> Optional[float]:
+    if not service or service.price is None:
+        return None
+    try:
+        value = float(service.price)
+        return value if value >= 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _tenant_amount_override(
+    db: Session,
+    service: Optional[SubscriptionService],
+    tenant: Optional[Tenant],
+) -> Optional[float]:
+    if not service or not tenant:
+        return None
+    service_keys = []
+    if service.button_id:
+        service_keys.append(service.button_id)
+    if service.name and service.name not in service_keys:
+        service_keys.append(service.name)
+    if not service_keys:
+        return None
+    row = (
+        db.query(ServiceConfiguration)
+        .filter(
+            ServiceConfiguration.tenant_id == tenant.id,
+            ServiceConfiguration.service_name.in_(service_keys),
+            ServiceConfiguration.configuration_key == "tenant_price_override",
+            ServiceConfiguration.is_active.is_(True),
+            ServiceConfiguration.deleted_at.is_(None),
+        )
+        .order_by(ServiceConfiguration.updated_at.desc(), ServiceConfiguration.created_at.desc())
+        .first()
+    )
+    if not row or row.configuration_value is None:
+        return None
+    raw = row.configuration_value
+    value = None
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            value = parsed.get("amount")
+        elif isinstance(parsed, (int, float, str)):
+            value = parsed
+    except (TypeError, ValueError, json.JSONDecodeError):
+        value = raw
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    return amount if amount >= 0 else None
 
 
 def get_feature_matrix(db: Session) -> List[Dict[str, Any]]:
@@ -144,6 +202,7 @@ def get_feature_matrix(db: Session) -> List[Dict[str, Any]]:
         button_id = feat["id"]
         service = _find_service_for_feature(db, feat)
         flags = _flags_from_service(service, feat)
+        amount = _amount_from_service(service)
         items.append(
             {
                 "button_id": button_id,
@@ -154,6 +213,8 @@ def get_feature_matrix(db: Session) -> List[Dict[str, Any]]:
                 "enabled": flags["enabled"],
                 "freemium": flags["freemium"],
                 "premium": flags["premium"],
+                "monetized": flags["monetized"],
+                "amount": amount,
                 "menuIds": feat.get("menuIds") or [],
                 "nameAliases": feat.get("nameAliases") or [],
             }
@@ -192,6 +253,7 @@ def sync_catalog_to_db(db: Session) -> int:
             is_active=bool(feat.get("service_state_enabled", True)),
             is_freemium_enabled=bool(feat.get("freemium_enabled", False)),
             is_premium_enabled=bool(feat.get("premium_enabled", False)),
+            is_monetized_enabled=bool(feat.get("monetization_enabled", False)),
         )
         db.add(svc)
         created += 1
@@ -228,6 +290,12 @@ def save_feature_matrix(
         service.is_active = bool(item.get("enabled", False))
         service.is_freemium_enabled = bool(item.get("freemium", False))
         service.is_premium_enabled = bool(item.get("premium", False))
+        service.is_monetized_enabled = bool(item.get("monetized", False))
+        if item.get("amount") is not None:
+            try:
+                service.price = Decimal(str(item.get("amount") or 0))
+            except (TypeError, ValueError):
+                pass
         db.add(service)
     db.commit()
     return get_feature_matrix(db)
@@ -430,11 +498,20 @@ def check_service_access(
     }
     if service:
         response["button_id"] = service.button_id
-        if service.price is not None:
-            try:
-                response["amount"] = float(service.price)
-            except (TypeError, ValueError):
-                pass
+        amount = _amount_from_service(service)
+        override_amount = _tenant_amount_override(db, service, tenant)
+        if override_amount is not None:
+            amount = override_amount
+            response["tenant_price_override"] = True
+        if amount is not None:
+            response["amount"] = amount
+        response["is_monetized"] = bool(service.is_monetized_enabled)
+        response["max_free_download"] = getattr(service, "max_free_download", None)
+        response["requires_payment"] = bool(
+            service.is_monetized_enabled and amount is not None and amount > 0
+        )
         if plan == "freemium" and service.is_freemium_enabled:
             response["is_freemium_enabled"] = True
+    elif feat:
+        response["is_monetized"] = bool(feat.get("monetization_enabled", False))
     return response

@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Integer, DateTime, Numeric
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 import datetime
 
 class StudentRecord(BaseModel_Base):
@@ -15,7 +15,8 @@ class StudentRecord(BaseModel_Base):
     exam = Column(Numeric(5, 2), nullable=True, default=0)
     total_score = Column(Numeric(5, 2), nullable=True)
     letter_grade = Column(String(2), nullable=True)  # A, B, C, D, F
-    gpa = Column(Numeric(3, 2), nullable=True)
+    gpa = Column(Numeric(3, 2), nullable=True)  # Per-course grade point (not cumulative GPA)
+    course_weight = Column(Numeric(3, 1), nullable=True, default=1.0)  # Course credits used in GPA weighting
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=True)
     deleted_at = Column(DateTime, nullable=True)  # Soft delete

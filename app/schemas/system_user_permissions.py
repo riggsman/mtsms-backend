@@ -16,7 +16,7 @@ class SystemUserPermissionRow(BaseModel):
 class SystemUserPermissionsListResponse(BaseModel):
     items: List[SystemUserPermissionRow]
     known_permissions: List[str] = Field(
-        default_factory=lambda: ["database_config"],
+        default_factory=lambda: ["database_config", "contact_notifications"],
         description="Keys the UI may grant to system_admin users",
     )
 

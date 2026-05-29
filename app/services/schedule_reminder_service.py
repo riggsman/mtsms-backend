@@ -384,6 +384,21 @@ class ScheduleReminderService:
             logger.warning(f"Error fetching reminder time setting: {e}")
         
         return 30  # Default fallback
+
+    def collect_reminder_times(self) -> set[int]:
+        """Load distinct reminder lead times (minutes) configured across tenants."""
+        tenant_settings = self.db.query(TenantSettings).filter(
+            TenantSettings.email_reminder_time.isnot(None)
+        ).all()
+
+        reminder_times = {
+            ts.email_reminder_time
+            for ts in tenant_settings
+            if ts.email_reminder_time is not None
+        }
+        if not reminder_times:
+            reminder_times = {30}
+        return reminder_times
     
     async def send_reminders_for_upcoming_classes(self, minutes_ahead: Optional[int] = 10):
         """
@@ -431,23 +446,25 @@ class ScheduleReminderService:
             if inst_id not in schedules_by_institution:
                 schedules_by_institution[inst_id] = []
             schedules_by_institution[inst_id].append(schedule)
+
+        institution_ids = list(schedules_by_institution.keys())
+        tenant_names_map: dict[int, str] = {}
+        if institution_ids:
+            try:
+                from app.models.tenant import Tenant
+
+                rows = (
+                    self.db.query(Tenant.id, Tenant.name)
+                    .filter(Tenant.id.in_(institution_ids))
+                    .all()
+                )
+                tenant_names_map = {row.id: row.name for row in rows}
+            except Exception:
+                pass
         
         # Process each institution's schedules with their reminder time
         for institution_id, inst_schedules in schedules_by_institution.items():
-            # Get institution name if available
-            institution_name = None
-            try:
-                from app.models.tenant import Tenant
-                from app.database.base import get_db_session
-                global_db = next(get_db_session())
-                try:
-                    tenant = global_db.query(Tenant).filter(Tenant.id == institution_id).first()
-                    if tenant:
-                        institution_name = tenant.name
-                finally:
-                    global_db.close()
-            except Exception:
-                pass  # If we can't get institution name, continue without it
+            institution_name = tenant_names_map.get(institution_id)
 
             # Get reminder time for this institution
             reminder_time = self.get_reminder_time(institution_id)

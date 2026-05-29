@@ -11,31 +11,49 @@ from starlette.responses import JSONResponse, Response
 from app.authentication.authenticator import verify_and_decode_access_token
 from app.database.base import DefaultSessionLocal
 from app.helpers.user_roles import user_is_system_admin
+from app.helpers.tenant_activation_cache import (
+    get_tenant_access_status,
+    set_tenant_access_status,
+)
 from app.models.user import User
 
 ACTIVATION_EXEMPT_PREFIXES = (
-    "/api/v1/tenant/access-status",
-    "/api/v1/tenant/features",
-    "/api/v1/tenant/check-service-access",
-    "/api/v1/system/maintenance-mode",
-    "/api/v1/system/settings/state",
-    "/api/v1/system/firebase-web-config",
-    "/api/v1/system/cache-version",
-    "/api/v1/contact",
-    "/api/v1/register",
-    "/api/v1/admin/",
-    "/api/v1/users/me/",
+    "/tenant/access-status",
+    "/tenant/features",
+    "/tenant/check-service-access",
+    "/certificates/",
+    "/transcript",
+    "/result-slip",
+    "/system/maintenance-mode",
+    "/system/settings/state",
+    "/system/firebase-web-config",
+    "/system/cache-version",
+    "/contact",
+    "/register",
+    "/admin/",
+    "/users/me/",
 )
 
 ACTIVATION_EXEMPT_EXACT = (
-    "/api/v1/tenants/me",
+    "/tenants/me",
 )
+
+API_V1_PREFIX = "/api/v1"
+
+
+def _normalize_api_path(path: str) -> str:
+    """Strip API prefix so exempt routes match mounted paths like /api/v1/tenant/access-status."""
+    normalized = (path or "/").rstrip("/") or "/"
+    if normalized.startswith(API_V1_PREFIX):
+        normalized = normalized[len(API_V1_PREFIX) :] or "/"
+    return normalized
 
 
 def _path_is_exempt(path: str) -> bool:
-    if path in ACTIVATION_EXEMPT_EXACT:
+    normalized = _normalize_api_path(path)
+    if normalized in ACTIVATION_EXEMPT_EXACT:
         return True
-    return any(path.startswith(prefix) for prefix in ACTIVATION_EXEMPT_PREFIXES)
+    return any(normalized.startswith(prefix) for prefix in ACTIVATION_EXEMPT_PREFIXES)
 
 
 def _load_user_from_request(request: Request, db) -> Optional[User]:
@@ -63,7 +81,7 @@ async def tenant_activation_middleware(request: Request, call_next) -> Response:
         return await call_next(request)
 
     path = request.url.path.rstrip("/") or "/"
-    if not path.startswith("/api/v1"):
+    if not path.startswith(""):
         return await call_next(request)
     if _path_is_exempt(path):
         return await call_next(request)
@@ -87,7 +105,19 @@ async def tenant_activation_middleware(request: Request, call_next) -> Response:
         if tenant is None:
             return await call_next(request)
 
-        if is_tenant_suspended(tenant, db):
+        cached_status = get_tenant_access_status(tenant.id)
+        if cached_status is not None:
+            suspended, activated = cached_status
+        else:
+            suspended = is_tenant_suspended(tenant, db)
+            activated = is_tenant_services_activated(tenant, db)
+            set_tenant_access_status(
+                tenant.id,
+                is_suspended=suspended,
+                is_activated=activated,
+            )
+
+        if suspended:
             reason = getattr(tenant, "suspension_reason", None) or ""
             body = {
                 "detail": {
@@ -98,7 +128,7 @@ async def tenant_activation_middleware(request: Request, call_next) -> Response:
             }
             return JSONResponse(status_code=403, content=body)
 
-        if not is_tenant_services_activated(tenant, db):
+        if not activated:
             body = {
                 "detail": {
                     "code": "TENANT_SERVICES_NOT_ACTIVATED",

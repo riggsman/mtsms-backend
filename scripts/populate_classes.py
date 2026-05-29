@@ -87,6 +87,8 @@ def seed_default_admin_user(session: Session, force: bool = False):
     Seed default system super admin user.
     Runs only once unless force=True.
     """
+    from app.authentication.authenticator import verify_password, hash_password
+    adminPass = hash_password("systemadmin")
     default_user = {
         "institution_id": None,
         "branch_id": None,
@@ -100,8 +102,8 @@ def seed_default_admin_user(session: Session, force: bool = False):
         "email": "system@admin.com",
         "phone": "+237688776677",
         "username": "systemadmin",
-        "password": "$argon2id$v=19$m=65536,t=3,p=4$+j9nrFWKcY7RGgMgZAyh9A$eWJ8+r5xf0d6WpSkGySLSkvfK+ZiiC3Hh9IvKKJBZSg",
-        "role": ["system_super_admin", "system_admin"],
+        "password": adminPass,
+        "role": ["system_super_admin"],
         "user_type": "SYSTEM",
         "is_active": "active",
         "must_change_password": "false",

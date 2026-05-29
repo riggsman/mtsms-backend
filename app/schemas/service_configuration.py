@@ -52,3 +52,17 @@ class ServiceConfigurationUpdateRequest(BaseModel):
     """Request model for updating service configurations via PUT"""
 
     configurations: list[ServiceConfigurationUpdateItem] = Field(..., description="List of configuration items to update")
+
+
+class TenantDocumentPricingItem(BaseModel):
+    """Tenant-level pricing override for a monetized document service."""
+
+    button_id: str = Field(..., min_length=1, max_length=200, description="Feature button ID")
+    amount: float = Field(..., ge=0, description="Tenant-specific amount")
+    is_active: bool = Field(default=True, description="Whether this override is active")
+
+
+class TenantDocumentPricingUpdateRequest(BaseModel):
+    """Request payload to upsert tenant document pricing overrides."""
+
+    items: list[TenantDocumentPricingItem] = Field(default_factory=list)

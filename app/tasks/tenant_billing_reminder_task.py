@@ -35,6 +35,8 @@ def start_tenant_billing_reminder_scheduler():
             id="tenant_billing_reminder_job",
             name="Tenant subscription billing reminders (5 days before due)",
             replace_existing=True,
+            max_instances=1,
+            coalesce=True,
         )
         billing_scheduler.start()
         logger.info(

@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 revision: str = "20260502_system_permissions"
 down_revision: Union[str, Sequence[str], None] = "20260501_payroll_code_used"
@@ -17,11 +18,25 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "users",
-        sa.Column("system_permissions", sa.JSON(), nullable=True),
-    )
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "users" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    if "system_permissions" not in columns:
+        op.add_column(
+            "users",
+            sa.Column("system_permissions", sa.JSON(), nullable=True),
+        )
 
 
 def downgrade() -> None:
-    op.drop_column("users", "system_permissions")
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "users" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    if "system_permissions" in columns:
+        op.drop_column("users", "system_permissions")

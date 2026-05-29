@@ -17,6 +17,7 @@ import importlib
 # Import models that use DefaultBase (global database)
 from app.models.tenant import Tenant
 from app.models.system_config import SystemConfig
+from app.models.system_semester import SystemSemester
 
 # Import models that use BaseModel_Base (tenant/shared database)
 from app.models.department import Department
@@ -31,9 +32,12 @@ from app.models.complaint import Complaint
 from app.models.assignment import Assignment
 from app.models.student_record import StudentRecord
 from app.models.enrollment import Enrollment
+from app.models.verified_document import VerifiedDocument
+from app.models.student_service_usage import StudentServiceUsage
+from app.models.student_uploaded_document import StudentUploadedDocument
 
 # Import Class model (class is a reserved keyword, so use importlib)
-_class_module = importlib.import_module('app.models.class')
+_class_module = importlib.import_module('app.models.classes')
 
 def create_tables():
     """Create all database tables"""

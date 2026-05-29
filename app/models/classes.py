@@ -1,5 +1,5 @@
-from sqlalchemy import Column, String, Integer, DateTime, Boolean
-from app.database.sessionManager import BaseModel_Base
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON
+from app.database.base_model import BaseModel_Base
 import datetime
 
 class Class(BaseModel_Base):
@@ -10,6 +10,8 @@ class Class(BaseModel_Base):
     code = Column(String(20), nullable=False)  # Class code (e.g., "l1", "L1", "Level 1")
     institution_level = Column(String(10), nullable=False, default="HI")  # HI (Higher Institution) or SI (Secondary Institution)
     category = Column(String(50), nullable=True)  # Category for the class
+    # Which degree program(s) this HI "application level" applies to (e.g. HND, BSC). Empty/NULL = not used for degree-filtered lists.
+    degree_program_codes = Column(JSON, nullable=True)
     is_custom = Column(Boolean, default=True, nullable=False)  # True for custom classes, False for default classes
     level_id = Column(Integer, nullable=True)  # Made nullable as it may not be needed with code
     department_id = Column(Integer, nullable=True)

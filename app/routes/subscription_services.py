@@ -31,6 +31,7 @@ def _update_service_from_payload(service: SubscriptionService, payload: Subscrip
     # Safely read freemium/premium flags from the request; default to False
     service.is_freemium_enabled = bool(getattr(payload, "freemium_enabled", False) or False)
     service.is_premium_enabled = bool(getattr(payload, "premium_enabled", False) or False)
+    service.max_free_download = getattr(payload, "max_free_download", None)
 
     # Convert features dict to JSON string for storage.
     # If no explicit features are provided, default to using the
@@ -124,6 +125,7 @@ def create_subscription_service(
         is_active=new_service.is_active,
         freemium_enabled=new_service.is_freemium_enabled,
         premium_enabled=new_service.is_premium_enabled,
+        max_free_download=getattr(new_service, "max_free_download", None),
         features=features_dict,
         created_at=new_service.created_at,
         updated_at=new_service.updated_at,
@@ -187,6 +189,7 @@ def list_subscription_services(
                 is_active=service.is_active,
                 freemium_enabled=getattr(service, "is_freemium_enabled", False),
                 premium_enabled=getattr(service, "is_premium_enabled", False),
+                max_free_download=getattr(service, "max_free_download", None),
                 features=features_dict,
                 created_at=service.created_at,
                 updated_at=service.updated_at,
@@ -279,6 +282,7 @@ def update_subscription_service(
         is_active=service.is_active,
         freemium_enabled=service.is_freemium_enabled,
         premium_enabled=service.is_premium_enabled,
+        max_free_download=getattr(service, "max_free_download", None),
         features=features_dict,
         created_at=service.created_at,
         updated_at=service.updated_at,

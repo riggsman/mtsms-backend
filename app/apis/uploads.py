@@ -94,7 +94,7 @@ async def upload_tenant_logo(
         )
         
         # Generate logo URL
-        logo_url = get_file_url(relative_path, base_url="/api/v1/uploads")
+        logo_url = get_file_url(relative_path)
         
         # Update settings with new logo path
         settings.logo = relative_path

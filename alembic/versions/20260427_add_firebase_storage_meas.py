@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 revision: str = "add_firebase_storage_meas"
 down_revision: Union[str, Sequence[str], None] = "20260221_fcm_tokens"
@@ -16,15 +17,30 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _system_settings_columns() -> set[str]:
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "system_settings" not in inspector.get_table_names():
+        return set()
+    return {col["name"] for col in inspector.get_columns("system_settings")}
+
+
 def upgrade() -> None:
-    op.add_column(
-        "system_settings",
-        sa.Column("firebase_storage_bucket", sa.String(255), nullable=True),
-    )
-    op.add_column(
-        "system_settings",
-        sa.Column("firebase_measurement_id", sa.String(255), nullable=True),
-    )
+    columns = _system_settings_columns()
+    if not columns:
+        return
+
+    if "firebase_storage_bucket" not in columns:
+        op.add_column(
+            "system_settings",
+            sa.Column("firebase_storage_bucket", sa.String(255), nullable=True),
+        )
+    if "firebase_measurement_id" not in columns:
+        op.add_column(
+            "system_settings",
+            sa.Column("firebase_measurement_id", sa.String(255), nullable=True),
+        )
+
     op.execute(
         sa.text(
             "UPDATE system_settings SET "
@@ -42,5 +58,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("system_settings", "firebase_measurement_id")
-    op.drop_column("system_settings", "firebase_storage_bucket")
+    columns = _system_settings_columns()
+    if "firebase_measurement_id" in columns:
+        op.drop_column("system_settings", "firebase_measurement_id")
+    if "firebase_storage_bucket" in columns:
+        op.drop_column("system_settings", "firebase_storage_bucket")

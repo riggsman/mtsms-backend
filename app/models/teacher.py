@@ -5,7 +5,7 @@ import datetime
 class Teacher(BaseModel_Base):
     __tablename__ = "teachers"
     id = Column(Integer, primary_key=True)
-    institution_id = Column(Integer, nullable=False)  # Multi-tenancy isolation
+    institution_id = Column(Integer, nullable=False)
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
     firstname = Column(String(70), nullable=False)
     middlename = Column(String(200), nullable=True)
@@ -20,7 +20,7 @@ class Teacher(BaseModel_Base):
     position = Column(String(120), nullable=True)
     qualification = Column(String(200), nullable=True)
     specialization = Column(String(200), nullable=True)
-    hourly_rate = Column(Numeric(12, 2), nullable=True)
+    hourly_rate = Column(Numeric(10, 2), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=True)
     deleted_at = Column(DateTime, nullable=True)  # Soft delete

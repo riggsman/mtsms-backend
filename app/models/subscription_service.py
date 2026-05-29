@@ -24,6 +24,8 @@ class SubscriptionService(DefaultBase):
     # These align with the Service Management UI checkboxes.
     is_freemium_enabled = Column(Boolean, default=False, nullable=False)
     is_premium_enabled = Column(Boolean, default=False, nullable=False)
+    is_monetized_enabled = Column(Boolean, default=False, nullable=False)
+    max_free_download = Column(Integer, nullable=True)
 
     features = Column(Text, nullable=True)  # JSON string of features
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)

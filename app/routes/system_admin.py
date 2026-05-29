@@ -29,7 +29,7 @@ from app.schemas.system_user_permissions import (
 
 system_admin = APIRouter()
 
-KNOWN_SYSTEM_PERMISSION_KEYS = ("database_config",)
+KNOWN_SYSTEM_PERMISSION_KEYS = ("database_config", "contact_notifications")
 
 def check_system_admin(current_user: User):
     """Helper to check if user is system admin"""

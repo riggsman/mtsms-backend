@@ -145,7 +145,8 @@ def get_classes(
     limit: int = 10,
     institution_id: Optional[int] = None,
     institution_level: Optional[str] = None,
-    department_id: Optional[int] = None
+    department_id: Optional[int] = None,
+    degree_program: Optional[str] = None,
 ) -> tuple[List[Class], int]:
     """
     Get list of classes with pagination.
@@ -178,12 +179,23 @@ def get_classes(
         if not enriched_class.category and enriched_class.institution_level:
             enriched_class.category = enriched_class.institution_level
         enriched_classes.append(enriched_class)
-    
+
+    if degree_program and (institution_level or "").upper() == "HI":
+        from app.helpers.hi_degree_program_classes import filter_classes_by_degree_program
+
+        enriched_classes = filter_classes_by_degree_program(
+            enriched_classes, degree_program, institution_level
+        )
+        custom_total = len(enriched_classes)
+
     # If we have custom classes, return them
     if enriched_classes and len(enriched_classes) > 0:
         return enriched_classes, custom_total
-    
+
     # If no custom classes exist, return default classes as fallback
+    # When filtering HI rows by degree program, do not inject generic defaults (they are not degree-scoped).
+    if degree_program and (institution_level or "").upper() == "HI":
+        return [], 0
     # Convert default classes to Class-like objects for consistency
     default_classes_list = []
     if institution_level:

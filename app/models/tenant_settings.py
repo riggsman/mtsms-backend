@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Integer, DateTime, JSON, Boolean
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 import datetime
 
 class TenantSettings(BaseModel_Base):
@@ -15,5 +15,8 @@ class TenantSettings(BaseModel_Base):
     email_reminder_time = Column(Integer, nullable=True, default=30)  # Minutes before class to send reminder (default: 30)
     branches_enabled = Column(Boolean, default=False, nullable=False)  # Multi-campus / branch mode
     payroll_auto_generate_codes = Column(Boolean, default=False, nullable=False)
+    current_semester_id = Column(Integer, nullable=True)
+    # Enabled degree program levels for student registration (e.g. HND, BSC, MBA)
+    enabled_program_levels = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=True)

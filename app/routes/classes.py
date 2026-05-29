@@ -49,6 +49,10 @@ def list_classes(
     page_size: Optional[int] = Query(None, ge=1, le=10000),
     institution_level: Optional[str] = Query(None),
     category: Optional[str] = Query(None, description="Filter by category (HI or SI). Maps to institution_level."),
+    degree_program: Optional[str] = Query(
+        None,
+        description="For HI: filter application levels to this degree code (e.g. HND, BSC, BTECH).",
+    ),
     department_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_tenant)
@@ -76,7 +80,8 @@ def list_classes(
             limit=10000,  # Large limit to get all
             institution_id=institution_id,
             institution_level=filter_level,
-            department_id=department_id
+            department_id=department_id,
+            degree_program=degree_program,
         )
         
         # Return as paginated response with all items
@@ -109,7 +114,8 @@ def list_classes(
         limit=page_size,
         institution_id=institution_id,
         institution_level=filter_level,
-        department_id=department_id
+        department_id=department_id,
+        degree_program=degree_program,
     )
     return PaginatedResponse.create(
         items=classes,

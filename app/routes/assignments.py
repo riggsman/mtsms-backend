@@ -224,7 +224,7 @@ async def submit_assignment_endpoint(
     )
     
     # Generate file URL for database storage (only URL, not file data)
-    file_url = get_file_url(relative_path, base_url="/api/v1/uploads")
+    file_url = get_file_url(relative_path)
     
     # Create submission request with file URL only
     submission_request = AssignmentSubmissionRequest(

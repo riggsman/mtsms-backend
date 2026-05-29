@@ -62,65 +62,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def _get_effective_access_token_expire_minutes():
-    """
-    Get effective access token expiration minutes from database, 
-    falling back to environment variable.
-    """
-    # First check env variable
-    import os
-    env_val = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")
-    if env_val:
-        print(f"[Authenticator] Using env ACCESS_TOKEN_EXPIRE_MINUTES: {env_val}")
-        return int(env_val)
-    
-    try:
-        from app.database.base import get_db_session
-        from app.models.system_settings import SystemSettings
-        
-        db = next(get_db_session())
-        try:
-            settings = db.query(SystemSettings).order_by(SystemSettings.id.asc()).first()
-            if settings and settings.access_token_expire_minutes is not None:
-                print(f"[Authenticator] Using database access_token_expire_minutes: {settings.access_token_expire_minutes}")
-                return settings.access_token_expire_minutes
-        finally:
-            db.close()
-    except Exception as e:
-        print(f"[Authenticator] Error fetching access token expire minutes from DB: {e}")
-    
-    print(f"[Authenticator] Using config default ACCESS_TOKEN_EXPIRE_MINUTES: {settings.ACCESS_TOKEN_EXPIRE_MINUTES}")
-    return settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    """Get effective access token expiration minutes (cached settings, then env, then config)."""
+    from app.helpers.system_settings_cache import get_effective_access_token_expire_minutes
+
+    return get_effective_access_token_expire_minutes()
 
 
 def _get_effective_refresh_token_expire_days():
-    """
-    Get effective refresh token expiration days from database,
-    falling back to environment variable.
-    """
-    # First check env variable
-    import os
-    env_val = os.getenv("REFRESH_TOKEN_EXPIRE_DAYS")
-    if env_val:
-        print(f"[Authenticator] Using env REFRESH_TOKEN_EXPIRE_DAYS: {env_val}")
-        return int(env_val)
-    
-    try:
-        from app.database.base import get_db_session
-        from app.models.system_settings import SystemSettings
-        
-        db = next(get_db_session())
-        try:
-            settings = db.query(SystemSettings).order_by(SystemSettings.id.asc()).first()
-            if settings and settings.refresh_token_expire_days is not None:
-                print(f"[Authenticator] Using database refresh_token_expire_days: {settings.refresh_token_expire_days}")
-                return settings.refresh_token_expire_days
-        finally:
-            db.close()
-    except Exception as e:
-        print(f"[Authenticator] Error fetching refresh token expire days from DB: {e}")
-    
-    print(f"[Authenticator] Using config default REFRESH_TOKEN_EXPIRE_DAYS: {settings.REFRESH_TOKEN_EXPIRE_DAYS}")
-    return settings.REFRESH_TOKEN_EXPIRE_DAYS
+    """Get effective refresh token expiration days (cached settings, then env, then config)."""
+    from app.helpers.system_settings_cache import get_effective_refresh_token_expire_days
+
+    return get_effective_refresh_token_expire_days()
 
 
 def create_access_token(data: dict, expires_delta: timedelta = None):

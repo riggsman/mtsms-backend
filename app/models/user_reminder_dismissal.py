@@ -2,7 +2,7 @@
 Model for tracking user reminder dismissals
 """
 from sqlalchemy import Column, Integer, DateTime, ForeignKey, Index
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 import datetime
 
 

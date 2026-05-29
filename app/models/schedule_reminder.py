@@ -2,7 +2,7 @@
 Model for tracking schedule reminders to avoid duplicate emails
 """
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Index
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 import datetime
 
 

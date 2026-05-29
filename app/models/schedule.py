@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Integer, DateTime, Text, Time
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 import datetime
 
 class Schedule(BaseModel_Base):

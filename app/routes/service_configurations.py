@@ -14,12 +14,16 @@ from app.schemas.service_configuration import (
     ServiceConfigurationBulkRequest,
     ServiceConfigurationUpdateRequest,
     ServiceConfigurationUpdateItem,
+    TenantDocumentPricingUpdateRequest,
 )
 from app.helpers.pagination import PaginatedResponse
 from app.helpers.user_roles import user_is_system_admin
 from app.services import feature_access_service as fas
+from app.models.student_service_usage import StudentServiceUsage
+from app.apis.students import resolve_student_for_logged_in_user
 
 service_configurations = APIRouter()
+DOCUMENT_PRICE_SERVICE_IDS = {"results_download_report_card", "results_transcript_access"}
 
 
 @service_configurations.post(
@@ -411,4 +415,147 @@ def check_service_access_for_tenant(
         institution_id=getattr(current_user, "institution_id", None),
         domain=x_tenant_domain,
     )
-    return fas.check_service_access(db, service_name, tenant)
+    payload = fas.check_service_access(db, service_name, tenant)
+
+    student = resolve_student_for_logged_in_user(db, current_user)
+    button_id = payload.get("button_id")
+    if student and button_id:
+        usage = (
+            db.query(StudentServiceUsage)
+            .filter(
+                StudentServiceUsage.institution_id == student.institution_id,
+                StudentServiceUsage.student_id == student.id,
+                StudentServiceUsage.service_key == button_id,
+            )
+            .first()
+        )
+        payload["used_free_download_count"] = int(usage.usage_count or 0) if usage else 0
+    else:
+        payload["used_free_download_count"] = 0
+    return payload
+
+
+@service_configurations.get(
+    "/tenant/document-pricing",
+    tags=["Service Configurations"],
+)
+def get_tenant_document_pricing(
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(require_any_role_admin(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    tenant_id = getattr(current_user, "institution_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant context is required")
+
+    items = []
+    for service in (
+        db.query(SubscriptionService)
+        .filter(
+            SubscriptionService.deleted_at.is_(None),
+            SubscriptionService.button_id.in_(list(DOCUMENT_PRICE_SERVICE_IDS)),
+        )
+        .all()
+    ):
+        config = (
+            db.query(ServiceConfiguration)
+            .filter(
+                ServiceConfiguration.tenant_id == tenant_id,
+                ServiceConfiguration.service_name == service.button_id,
+                ServiceConfiguration.configuration_key == "tenant_price_override",
+                ServiceConfiguration.deleted_at.is_(None),
+            )
+            .first()
+        )
+        amount = None
+        if config and config.configuration_value is not None:
+            try:
+                amount = float(config.configuration_value)
+            except (TypeError, ValueError):
+                amount = None
+        base_amount = None
+        try:
+            base_amount = float(service.price) if service.price is not None else None
+        except (TypeError, ValueError):
+            base_amount = None
+        items.append(
+            {
+                "button_id": service.button_id,
+                "service_name": service.name,
+                "base_amount": base_amount,
+                "amount": amount,
+                "is_active": bool(config.is_active) if config else False,
+            }
+        )
+
+    return {"items": items}
+
+
+@service_configurations.put(
+    "/tenant/document-pricing",
+    tags=["Service Configurations"],
+)
+def upsert_tenant_document_pricing(
+    payload: TenantDocumentPricingUpdateRequest,
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(require_any_role_admin(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    tenant_id = getattr(current_user, "institution_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant context is required")
+
+    updated = []
+    for item in payload.items:
+        button_id = str(item.button_id or "").strip()
+        if button_id not in DOCUMENT_PRICE_SERVICE_IDS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported document pricing service '{button_id}'",
+            )
+        service = (
+            db.query(SubscriptionService)
+            .filter(
+                SubscriptionService.deleted_at.is_(None),
+                SubscriptionService.button_id == button_id,
+            )
+            .first()
+        )
+        if not service:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Subscription service '{button_id}' not found",
+            )
+        config = (
+            db.query(ServiceConfiguration)
+            .filter(
+                ServiceConfiguration.tenant_id == tenant_id,
+                ServiceConfiguration.service_name == button_id,
+                ServiceConfiguration.configuration_key == "tenant_price_override",
+                ServiceConfiguration.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if config:
+            config.configuration_value = str(item.amount)
+            config.is_active = bool(item.is_active)
+            config.description = "Tenant-specific document download price override"
+            db.add(config)
+        else:
+            config = ServiceConfiguration(
+                tenant_id=tenant_id,
+                service_name=button_id,
+                configuration_key="tenant_price_override",
+                configuration_value=str(item.amount),
+                description="Tenant-specific document download price override",
+                is_active=bool(item.is_active),
+            )
+            db.add(config)
+        updated.append(
+            {
+                "button_id": button_id,
+                "service_name": service.name,
+                "amount": float(item.amount),
+                "is_active": bool(item.is_active),
+            }
+        )
+    db.commit()
+    return {"items": updated}

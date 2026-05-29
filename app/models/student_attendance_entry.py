@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, Integer, DateTime, Date
 import datetime
 
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 
 
 class StudentAttendanceEntry(BaseModel_Base):

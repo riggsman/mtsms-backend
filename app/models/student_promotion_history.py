@@ -2,7 +2,7 @@ import datetime
 
 from sqlalchemy import Column, DateTime, Integer, String, Text
 
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 
 
 class StudentPromotionHistory(BaseModel_Base):

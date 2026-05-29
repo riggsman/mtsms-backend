@@ -10,8 +10,8 @@ class CourseRequest(BaseModel):
     department_id: int
     level_id: Optional[int] = None
     instructor_id: Optional[int] = None
-    # 1 = first semester, 2 = second semester (matches admin UI)
-    semester: Optional[int] = Field(None, ge=1, le=2)
+    # Stores semester ID from global system semester setup.
+    semester: Optional[int] = Field(None, ge=1)
     start_date: Optional[date] = None
     expected_end_date: Optional[date] = None
     institution_id: Optional[int] = None
@@ -44,7 +44,7 @@ class CourseUpdate(BaseModel):
     level_id: Optional[int] = None
     instructor_id: Optional[int] = None
     credits: Optional[Decimal] = None
-    semester: Optional[int] = Field(None, ge=1, le=2)
+    semester: Optional[int] = Field(None, ge=1)
     start_date: Optional[date] = None
     expected_end_date: Optional[date] = None
 

@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 revision: str = "20260501_payroll_code_used"
 down_revision: Union[str, Sequence[str], None] = "20260430_student_course_ranks"
@@ -17,15 +18,23 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "payroll_time_entries",
-        sa.Column("clock_in_code_used_at", sa.DateTime(), nullable=True),
-    )
-    op.add_column(
-        "payroll_time_entries",
-        sa.Column("clock_out_code_used_at", sa.DateTime(), nullable=True),
-    )
-    # Best-effort backfill for rows created before this migration.
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "payroll_time_entries" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"] for col in inspector.get_columns("payroll_time_entries")}
+    if "clock_in_code_used_at" not in columns:
+        op.add_column(
+            "payroll_time_entries",
+            sa.Column("clock_in_code_used_at", sa.DateTime(), nullable=True),
+        )
+    if "clock_out_code_used_at" not in columns:
+        op.add_column(
+            "payroll_time_entries",
+            sa.Column("clock_out_code_used_at", sa.DateTime(), nullable=True),
+        )
+
     op.execute(
         """
         UPDATE payroll_time_entries
@@ -54,5 +63,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("payroll_time_entries", "clock_out_code_used_at")
-    op.drop_column("payroll_time_entries", "clock_in_code_used_at")
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "payroll_time_entries" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"] for col in inspector.get_columns("payroll_time_entries")}
+    if "clock_out_code_used_at" in columns:
+        op.drop_column("payroll_time_entries", "clock_out_code_used_at")
+    if "clock_in_code_used_at" in columns:
+        op.drop_column("payroll_time_entries", "clock_in_code_used_at")

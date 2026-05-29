@@ -11,6 +11,8 @@ class FeatureMatrixItemResponse(BaseModel):
     enabled: bool = False
     freemium: bool = False
     premium: bool = False
+    monetized: bool = False
+    amount: Optional[float] = None
     menuIds: List[str] = Field(default_factory=list)
     nameAliases: List[str] = Field(default_factory=list)
 
@@ -24,6 +26,8 @@ class FeatureMatrixUpdateItem(BaseModel):
     enabled: bool = False
     freemium: bool = False
     premium: bool = False
+    monetized: bool = False
+    amount: Optional[float] = Field(None, ge=0)
 
 
 class FeatureMatrixUpdateRequest(BaseModel):

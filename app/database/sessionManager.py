@@ -1,5 +1,6 @@
 import time
 from typing import Optional
+
 try:
     from fastapi import Depends, HTTPException
 except ImportError:
@@ -7,11 +8,12 @@ except ImportError:
         def __init__(self, dependency=None): pass
     class HTTPException(Exception):
         def __init__(self, status_code=500, detail=None): pass
-from sqlalchemy.orm import Session
-from sqlalchemy import create_engine
+
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.exc import OperationalError
+
 from app.database.base import get_db_session, DefaultSessionLocal
+from app.database.base_model import BaseModel_Base
+from app.database.engine_config import create_engine_with_retry
 
 get_db = get_db_session
 from app.helpers.formater import Format_Helper
@@ -26,32 +28,13 @@ try:
 except ImportError:
     MYSQL_AVAILABLE = False
     Error = Exception
-from sqlalchemy.ext.declarative import declarative_base
+# from sqlalchemy.ext.declarative import declarative_base
 
-BaseModel_Base = declarative_base()
+# BaseModel_Base = declarative_base()
 
 tenant_engine = {}
 
 _db_mode_cache = None
-
-
-def create_engine_with_retry(url, max_retries=10, retry_interval=3):
-    for attempt in range(max_retries):
-        try:
-            engine = create_engine(
-                url,
-                pool_pre_ping=True,
-                pool_recycle=3600,
-                pool_timeout=30,
-            )
-            engine.connect()
-            return engine
-        except OperationalError as e:
-            print(f"Database connection attempt {attempt + 1} failed: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(retry_interval)
-            else:
-                raise
 
 
 async def create_tenant_database(db_name, user: str | None = None, password: str | None = None):
@@ -74,7 +57,7 @@ async def create_tenant_database(db_name, user: str | None = None, password: str
         cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{tenant_db_name}`")
         print(f"Database '{tenant_db_name}' created successfully.")
 
-        engine = create_engine_with_retry(build_tenant_database_url(tenant_db_name))
+        engine = create_engine_with_retry(build_tenant_database_url(tenant_db_name), for_tenant=True)
         BaseModel_Base.metadata.create_all(bind=engine)
 
         cursor.close()
@@ -88,6 +71,18 @@ async def create_tenant_database(db_name, user: str | None = None, password: str
         return None
 
 
+def _normalize_database_mode_value(raw) -> str:
+    """Coerce stored config into 'shared' or 'multi_tenant'."""
+    if raw is None:
+        return "shared"
+    if isinstance(raw, list):
+        raw = raw[0] if raw else "shared"
+    mode = str(raw).strip().lower()
+    if mode in ("multi_tenant", "multi-tenant", "multitenant", "isolated"):
+        return "multi_tenant"
+    return "shared"
+
+
 def get_database_mode() -> str:
     """
     Get the current database architecture mode.
@@ -98,15 +93,15 @@ def get_database_mode() -> str:
     
     # Return cached value if available
     if _db_mode_cache is not None:
-        return _db_mode_cache
+        return _normalize_database_mode_value(_db_mode_cache)
     
     # Query the global database for the mode
     db = DefaultSessionLocal()
     try:
         config = db.query(SystemConfig).filter(SystemConfig.key == 'database_mode').first()
         if config and config.value:
-            _db_mode_cache = config.value
-            return config.value
+            _db_mode_cache = _normalize_database_mode_value(config.value)
+            return _db_mode_cache
         else:
             # Default to shared if not configured
             _db_mode_cache = 'shared'
@@ -154,7 +149,7 @@ def set_database_mode(mode: str, db: Session):
         db.add(config)
     
     db.commit()
-    _db_mode_cache = mode  # Update cache
+    _db_mode_cache = _normalize_database_mode_value(mode)  # Update cache
 
 
 def get_shared_db():
@@ -181,7 +176,7 @@ def get_tenant_db(tenant_name: str):
     try:
         tenant_db_name = Format_Helper(tenant_name).replace_space_with_underscore()
         # Create a new engine for the tenant
-        engine = create_engine_with_retry(build_tenant_database_url(tenant_db_name))
+        engine = create_engine_with_retry(build_tenant_database_url(tenant_db_name), for_tenant=True)
         print(f"Created new engine for tenant '{tenant_db_name}'")
 
         # Create a sessionmaker for the tenant

@@ -101,7 +101,7 @@ def _seed_settings(fcm_db, **firebase_fields):
 
 def test_firebase_web_config_disabled_when_messaging_off(fcm_db, fcm_client):
     _seed_settings(fcm_db, firebase_messaging_enabled=False)
-    r = fcm_client.get("/api/v1/system/firebase-web-config")
+    r = fcm_client.get("/system/firebase-web-config")
     assert r.status_code == 200
     data = r.json()
     assert data["enabled"] is False
@@ -119,7 +119,7 @@ def test_firebase_web_config_enabled_when_complete(fcm_db, fcm_client):
         firebase_app_id="1:123:web:abc",
         firebase_vapid_key="BTestVapidKeyPublic",
     )
-    r = fcm_client.get("/api/v1/system/firebase-web-config")
+    r = fcm_client.get("/system/firebase-web-config")
     assert r.status_code == 200
     data = r.json()
     assert data["enabled"] is True
@@ -166,7 +166,7 @@ def test_fcm_token_register_204_when_enabled(fcm_db, fcm_client):
 
 def test_notifications_test_push_forbidden_when_messaging_disabled(fcm_db, fcm_client):
     _seed_settings(fcm_db, firebase_messaging_enabled=False)
-    r = fcm_client.post("/api/v1/notifications/test-push")
+    r = fcm_client.post("/notifications/test-push")
     assert r.status_code == 403
 
 
@@ -180,7 +180,7 @@ def test_notifications_test_push_no_tokens(fcm_db, fcm_client):
         firebase_messaging_sender_id="1",
         firebase_app_id="1:1:web:x",
     )
-    r = fcm_client.post("/api/v1/notifications/test-push")
+    r = fcm_client.post("/notifications/test-push")
     assert r.status_code == 200
     data = r.json()
     assert data["ok"] is False
@@ -217,7 +217,7 @@ def test_notifications_test_push_admin_sdk_missing(fcm_db, fcm_client, monkeypat
         )
     )
     fcm_db.commit()
-    r = fcm_client.post("/api/v1/notifications/test-push")
+    r = fcm_client.post("/notifications/test-push")
     assert r.status_code == 200
     data = r.json()
     assert data["reason"] == "admin_sdk_not_configured"

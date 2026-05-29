@@ -8,6 +8,8 @@ from app.apis.tenant_settings import (
     is_matricule_format_configured,
     preview_student_id
 )
+from app.apis.students import resolve_student_for_logged_in_user
+from app.models.student_service_usage import StudentServiceUsage
 from app.dependencies.tenantDependency import get_db
 from app.dependencies.auth import get_current_user_tenant, require_any_role
 from app.models.user import User
@@ -47,11 +49,15 @@ def get_settings(
     print("INSTITUTION ID FROM SERVER ", category.category)
     if not settings or not category:
         # Return default response if no settings exist
+        from app.constants.program_levels import DEFAULT_ENABLED_PROGRAM_LEVELS
+
         return TenantSettingsResponse(
             id=0,
             institution_id=institution_id,
             matricule_format=None,
             branches_enabled=False,
+            current_semester_id=None,
+            enabled_program_levels=list(DEFAULT_ENABLED_PROGRAM_LEVELS),
         )
     
     # model_validator will handle JSON string parsing automatically
@@ -98,6 +104,8 @@ def update_settings(
         email_reminder_time=settings.email_reminder_time,
         branches_enabled=settings.branches_enabled,
         payroll_auto_generate_codes=settings.payroll_auto_generate_codes,
+        current_semester_id=settings.current_semester_id,
+        enabled_program_levels=settings.enabled_program_levels,
     )
     
     updated_settings = create_or_update_tenant_settings(db, institution_id, settings_without_institution_id)
@@ -212,3 +220,45 @@ def allocate_lecturer_matricule(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@tenant_settings_router.post("/tenant-settings/service-usage/increment")
+def increment_service_usage(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_tenant),
+):
+    """
+    Increment per-student usage count for monetized/freemium service actions.
+    Stores usage in DB so free-limit checks are durable across devices/sessions.
+    """
+    service_key = str(payload.get("service_key") or "").strip()
+    if not service_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="service_key is required")
+
+    student = resolve_student_for_logged_in_user(db, current_user)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not found")
+
+    row = (
+        db.query(StudentServiceUsage)
+        .filter(
+            StudentServiceUsage.institution_id == student.institution_id,
+            StudentServiceUsage.student_id == student.id,
+            StudentServiceUsage.service_key == service_key,
+        )
+        .first()
+    )
+    if row:
+        row.usage_count = int(row.usage_count or 0) + 1
+    else:
+        row = StudentServiceUsage(
+            institution_id=student.institution_id,
+            student_id=student.id,
+            service_key=service_key,
+            usage_count=1,
+        )
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"service_key": service_key, "usage_count": int(row.usage_count or 0)}

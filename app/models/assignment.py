@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Integer, DateTime, Text, Date, Numeric
-from app.database.sessionManager import BaseModel_Base
+from app.database.base_model import BaseModel_Base
 import datetime
 
 class Assignment(BaseModel_Base):

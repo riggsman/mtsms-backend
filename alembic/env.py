@@ -63,6 +63,7 @@ from app.models.user import User
 from app.models.complaint import Complaint
 from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.student_record import StudentRecord
+from app.models.grading_method import GradingMethod, GradingRange
 from app.models.enrollment import Enrollment
 from app.models.note import Note
 from app.models.announcement import Announcement
@@ -79,7 +80,7 @@ from alembic.script import ScriptDirectory
 
 # Import Class model (class is a reserved keyword)
 import importlib
-_class_module = importlib.import_module('app.models.class')
+_class_module = importlib.import_module('app.models.classes')
 
 # Combine metadata from both bases into a single metadata object
 # This allows Alembic to detect all tables from both bases

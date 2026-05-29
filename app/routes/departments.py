@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from app.schemas.departments import DepartmentRequest, DepartmentResponse, DepartmentUpdate
 from app.apis.departments import (
     create_department, get_department, get_departments,
     update_department, delete_department
@@ -15,6 +14,7 @@ from app.helpers.pagination import PaginatedResponse
 from app.helpers.user_roles import user_is_system_admin
 from app.helpers.tenant_scope import institution_id_for_user
 from app.dependencies.institutionDependency import get_institution_id_from_header
+from app.schemas.departments import DepartmentResponse, DepartmentRequest, DepartmentUpdate
 
 department_router = APIRouter()
 

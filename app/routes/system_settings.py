@@ -16,6 +16,8 @@ The endpoints will be available at:
 """
 
 import os
+import time
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
@@ -31,13 +33,136 @@ from app.schemas.system_settings import (
     SystemSettingsRequest,
     SystemSettingsResponse,
     SystemSettingsState,
+    ForceCacheInvalidateResponse,
     FirebaseMessagingConfig,
     FirebaseWebClientBundle,
     FirebaseWebAppConfig,
 )
+from app.models.system_semester import SystemSemester
+from app.schemas.system_semester import (
+    SystemSemesterCreate,
+    SystemSemesterResponse,
+    SystemSemesterUpdate,
+)
 
 
 system_settings = APIRouter()
+
+
+def _normalize_semester_payload(name: str, code: str) -> tuple[str, str]:
+    return (name or "").strip(), (code or "").strip().upper()
+
+
+@system_settings.get(
+    "/system/semesters",
+    response_model=list[SystemSemesterResponse],
+    tags=["System Settings"],
+)
+def list_system_semesters(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(SystemSemester)
+    if not include_inactive:
+        query = query.filter(SystemSemester.is_active.is_(True))
+    return query.order_by(SystemSemester.display_order.asc(), SystemSemester.id.asc()).all()
+
+
+@system_settings.post(
+    "/system/semesters",
+    response_model=SystemSemesterResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["System Settings"],
+)
+def create_system_semester(
+    payload: SystemSemesterCreate,
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    if not user_is_system_admin(current_user):
+        raise HTTPException(status_code=403, detail="Only system admin can create semesters")
+
+    name, code = _normalize_semester_payload(payload.name, payload.code)
+    if not name or not code:
+        raise HTTPException(status_code=400, detail="Semester name and code are required")
+
+    existing = db.query(SystemSemester).filter(
+        (SystemSemester.name == name) | (SystemSemester.code == code)
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Semester name or code already exists")
+
+    row = SystemSemester(
+        name=name,
+        code=code,
+        display_order=payload.display_order,
+        is_active=payload.is_active,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@system_settings.put(
+    "/system/semesters/{semester_id}",
+    response_model=SystemSemesterResponse,
+    tags=["System Settings"],
+)
+def update_system_semester(
+    semester_id: int,
+    payload: SystemSemesterUpdate,
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    if not user_is_system_admin(current_user):
+        raise HTTPException(status_code=403, detail="Only system admin can update semesters")
+
+    row = db.query(SystemSemester).filter(SystemSemester.id == semester_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Semester not found")
+
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data:
+        data["name"] = (data["name"] or "").strip()
+    if "code" in data:
+        data["code"] = (data["code"] or "").strip().upper()
+
+    target_name = data.get("name", row.name)
+    target_code = data.get("code", row.code)
+    duplicate = db.query(SystemSemester).filter(
+        SystemSemester.id != semester_id,
+        ((SystemSemester.name == target_name) | (SystemSemester.code == target_code)),
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail="Semester name or code already exists")
+
+    for key, value in data.items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@system_settings.delete(
+    "/system/semesters/{semester_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["System Settings"],
+)
+def delete_system_semester(
+    semester_id: int,
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    if not user_is_system_admin(current_user):
+        raise HTTPException(status_code=403, detail="Only system admin can delete semesters")
+    row = db.query(SystemSemester).filter(SystemSemester.id == semester_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Semester not found")
+    db.delete(row)
+    db.commit()
+    return None
 
 
 def get_firebase_config_from_db_or_env(db: Session):
@@ -146,6 +271,69 @@ def get_cache_version(
     return {"cache_version": settings.cache_version if settings else "1"}
 
 
+@system_settings.post(
+    "/system/force-cache-invalidate",
+    response_model=ForceCacheInvalidateResponse,
+    tags=["System Settings"],
+)
+def force_cache_invalidate(
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Bump global cache_version and notify all clients to refresh cached data.
+    System admin only — used by the Force Apply action in system settings UI.
+    """
+    if not user_is_system_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admin or system super admin can force cache invalidation",
+        )
+
+    settings = _get_or_create_singleton(db)
+    new_version = str(int(time.time() * 1000))
+    settings.cache_version = new_version
+
+    try:
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update cache version: {exc}",
+        ) from exc
+
+    from app.helpers.system_settings_cache import invalidate_system_settings_cache
+    from app.helpers.tenant_activation_cache import invalidate_tenant_access_cache
+    from app.services.feature_access_service import invalidate_feature_catalog_cache
+
+    invalidate_system_settings_cache()
+    invalidate_tenant_access_cache()
+    invalidate_feature_catalog_cache()
+
+    try:
+        from app.services.socket_service import socket_manager
+
+        socket_manager.emit_cache_invalidated(
+            {
+                "cache_version": new_version,
+                "maintenance_mode": settings.maintenance_mode,
+                "triggered_by": current_user.id,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+    except Exception as exc:
+        print(f"[force_cache_invalidate] Socket emit skipped: {exc}")
+
+    return ForceCacheInvalidateResponse(
+        success=True,
+        cache_version=new_version,
+        message="Cache invalidated system-wide. All connected clients will refresh.",
+    )
+
+
 @system_settings.get(
     "/system/maintenance-mode",
     tags=["System Settings"],
@@ -192,6 +380,9 @@ def get_system_settings_state(
             cacheTimeout=5,
             inactivityTimeout=5,
             maintenanceCheckInterval=60,
+            platformSupportEmail=None,
+            platformSupportPhone=None,
+            platformSupportHours=None,
         )
     
     return SystemSettingsState(
@@ -201,6 +392,9 @@ def get_system_settings_state(
         cacheTimeout=getattr(settings, "cache_timeout", 5),
         inactivityTimeout=getattr(settings, "inactivity_timeout", 5),
         maintenanceCheckInterval=getattr(settings, "maintenance_check_interval", 60),
+        platformSupportEmail=getattr(settings, "platform_support_email", None),
+        platformSupportPhone=getattr(settings, "platform_support_phone", None),
+        platformSupportHours=getattr(settings, "platform_support_hours", None),
     )
 
 
@@ -428,6 +622,9 @@ def update_system_settings(
         db.add(settings)
         db.commit()
         db.refresh(settings)
+        from app.helpers.system_settings_cache import invalidate_system_settings_cache
+
+        invalidate_system_settings_cache()
         
         if settings.updated_at is None:
             raise HTTPException(
@@ -489,7 +686,7 @@ async def upload_system_logo(
             file_category='logo'
         )
 
-        logo_url = get_file_url(relative_path, base_url="/api/v1/uploads")
+        logo_url = get_file_url(relative_path)
         settings.logo_url = logo_url
 
         try:

@@ -68,7 +68,7 @@ async def create_complaint_endpoint(
                     tenant_domain=tenant_domain,
                     file_category='complaints'
                 )
-                file_url = get_file_url(relative_path, base_url="/api/v1/uploads")
+                file_url = get_file_url(relative_path)
                 screenshot_urls.append(file_url)  # Store only URLs, not file data
     
     # Create complaint request from FormData

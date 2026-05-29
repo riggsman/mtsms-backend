@@ -7,6 +7,7 @@ from app.schemas.contact import (
     ContactReplyRequest,
 )
 from app.services.email_service import EmailService
+from app.services.contact_notification_service import send_contact_admin_notifications
 from app.helpers.async_helper import run_async_safe
 from app.conf.config import settings
 from typing import Optional, List
@@ -113,13 +114,23 @@ Message:
 This is an automated acknowledgement from {app_name}. Please do not reply to this email.
 """.strip()
 
-    # Fire-and-forget sending (non-blocking for the API)
+    # Fire-and-forget: acknowledgement to sender + alert to platform admins
     run_async_safe(
         EmailService.send_email(
             to_email=str(payload.email),
             subject=subject,
             html_content=html_content,
             text_content=text_content,
+        )
+    )
+    run_async_safe(
+        send_contact_admin_notifications(
+            message_id=contact_message.id,
+            name=payload.name,
+            email=str(payload.email),
+            subject=payload.subject,
+            message=payload.message,
+            phone=payload.phone,
         )
     )
 

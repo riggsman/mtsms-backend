@@ -343,6 +343,21 @@ async def create_new_tenant(db: Session, tenant: TenantRequest, logo_file: Optio
             logger.warning(
                 f"Could not create initial branch for tenant {tenant.name}: {branch_err}"
             )
+
+        # HI: seed application-level rows (Level 1–3, Masters 1–2, B.Tech cohort) for student registration.
+        try:
+            if new_tenant.category and str(new_tenant.category).upper() == "HI":
+                from app.helpers.hi_degree_program_classes import seed_hi_application_level_classes
+
+                seed_hi_application_level_classes(settings_db, tenant_id)
+        except Exception as seed_err:
+            from app.helpers.logger import logger
+
+            logger.warning(
+                "Could not seed HI application-level classes for tenant %s: %s",
+                tenant.name,
+                seed_err,
+            )
     except Exception as e:
         from app.helpers.logger import logger
         logger.warning(f"Could not create tenant_settings for tenant {tenant.name}: {e}")
@@ -453,7 +468,7 @@ def _add_logo_url(db: Session, tenant: Tenant) -> Tenant:
         
         if tenant_settings and tenant_settings.logo:
             # Generate URL for the logo file
-            logo_url = get_file_url(tenant_settings.logo, base_url="/api/v1/uploads")
+            logo_url = get_file_url(tenant_settings.logo)
             # Update tenant table with logo_url for future use
             try:
                 tenant.logo_url = logo_url
@@ -1000,6 +1015,9 @@ def suspend_tenant(
     tenant.suspended_at = datetime.datetime.utcnow()
     db.commit()
     db.refresh(tenant)
+    from app.helpers.tenant_activation_cache import invalidate_tenant_access_cache
+
+    invalidate_tenant_access_cache(tenant.id)
     record_tenant_audit_event(
         db,
         tenant_id=tenant.id,
@@ -1027,6 +1045,9 @@ def resume_tenant(
     tenant.suspended_at = None
     db.commit()
     db.refresh(tenant)
+    from app.helpers.tenant_activation_cache import invalidate_tenant_access_cache
+
+    invalidate_tenant_access_cache(tenant.id)
     record_tenant_audit_event(
         db,
         tenant_id=tenant.id,
